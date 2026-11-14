@@ -70,9 +70,14 @@ const trophyCounts = () => countTiers(PATHS.filter(p => p.content).flatMap(pathT
 // ------------------------------------------------------------ světlý / tmavý režim
 const systemDark = () => window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
 const isDark = () => (store.get().theme || (systemDark() ? 'dark' : 'light')) === 'dark';
+// barvy systémových lišt = barva pozadí (--bg) světlého / tmavého motivu
+const BAR_COLOR = { light: '#f6f5f1', dark: '#1b1b19' };
 function applyTheme() {
   const t = store.get().theme;
   if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+  document.querySelectorAll('meta[name="theme-color"]').forEach(meta => {
+    meta.content = t ? BAR_COLOR[t] : (meta.media || '').includes('dark') ? BAR_COLOR.dark : BAR_COLOR.light;
+  });
 }
 function toggleTheme(btn) {
   store.set({ theme: isDark() ? 'light' : 'dark' });
@@ -665,6 +670,31 @@ function installButton() {
   if (!installPrompt || isStandalone()) return h('span');
   return h('button', { class: 'btn btn-ghost install-btn', onclick: async () => { installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; route(); }, html: ICONS.download + '<span>Nainstalovat jako aplikaci</span>' });
 }
+// ------------------------------------------------------------ mobil v režimu „Verze pro počítač“
+// Chrome pak ignoruje viewport a vykreslí stránku na šířku počítače (~980 px) zmenšenou na displej.
+// Nainstalovaná aplikace tu volbu dědí z Chromu a sama ji vypnout nejde → poradíme jak.
+function desktopModeOnPhone() {
+  const touch = navigator.maxTouchPoints > 0 || window.matchMedia?.('(pointer: coarse)').matches;
+  if (!touch) return false;
+  const vv = window.visualViewport;
+  const zoomedOut = !!vv && vv.scale < 0.75 && window.innerWidth >= 900;
+  const wideLayout = screen.width > 0 && screen.width < 700 && document.documentElement.clientWidth > screen.width * 1.3;
+  return zoomedOut || wideLayout;
+}
+function desktopModeHint() {
+  if (document.querySelector('.desktop-hint') || !desktopModeOnPhone()) return;
+  // stránka je zmenšená na displej → písmo zvětšit stejným poměrem, ať je čitelné
+  const zoom = Math.max(1 / Math.min(1, window.visualViewport?.scale || 1), screen.width > 0 ? document.documentElement.clientWidth / screen.width : 1);
+  const how = isStandalone()
+    ? 'Otevři Chrome → ⋮ → Nastavení → Nastavení webu → Verze pro počítač a vypni ji. Pak aplikaci zavři a otevři znovu.'
+    : 'V menu Chromu ⋮ odškrtni „Verze pro počítač“.';
+  const bar = h('div', { class: 'desktop-hint', role: 'alert', style: `font-size:${Math.round(16 * Math.min(zoom, 3.5))}px` },
+    h('div', {}, h('b', {}, 'Aplikace běží v režimu pro počítač.'), ' ', how),
+    h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Zavřít', onclick: () => bar.remove(), html: ICONS.close }));
+  document.body.prepend(bar);
+}
+if (document.readyState === 'complete') desktopModeHint(); else window.addEventListener('load', desktopModeHint);
+
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
 }
@@ -729,4 +759,4 @@ sync.init().then(res => {
 });
 
 // exporty pro ladění v konzoli
-window.__ma1 = Object.assign(window.__ma1 || {}, { GEN, asChoice, store });
+window.__ma1 = Object.assign(window.__ma1 || {}, { GEN, asChoice, store, desktopModeHint });

@@ -559,3 +559,9 @@ td.st-minus { color: #d85a30; font-weight: 800; }
 .sync-offer-icon svg { width: 34px; height: 34px; }
 .link-btn { background: none; border: 0; font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; margin-top: 12px; padding: 4px 8px; }
 @media (max-width: 380px) { .stats { gap: 2px; } .stats .icon-btn { padding: 6px; } }
+
+/* ---------- upozornění: mobil v režimu „Verze pro počítač“ ---------- */
+.desktop-hint { display: flex; gap: .6em; align-items: flex-start; padding: .8em 1em; line-height: 1.4; background: var(--soft); color: var(--soft-text); border-bottom: 2px solid var(--soft-line); }
+.desktop-hint > div { flex: 1; }
+.desktop-hint .icon-btn { color: inherit; padding: .2em; }
+.desktop-hint svg { width: 1.4em; height: 1.4em; }
