@@ -1,0 +1,21 @@
+{
+  "name": "prezij-ma1",
+  "version": "1.0.0",
+  "description": "Přežij MA1",
+  "scripts": {
+    "start": "npx --yes serve -l 5173 .",
+    "vendor:auth": "esbuild node_modules/@supabase/auth-js/dist/module/index.js --bundle --format=esm --minify --target=es2020 --legal-comments=eof --outfile=vendor/supabase/auth-js.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@supabase/auth-js": "2.118.0",
+    "katex": "0.18.11"
+  },
+  "private": true,
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}
