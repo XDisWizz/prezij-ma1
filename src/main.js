@@ -362,13 +362,43 @@ function pathScreen(id) {
 }
 
 // ------------------------------------------------------------ lekce
-function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, cheat }) {
+// Rozpracovaná lekce se průběžně ukládá, aby ji omylem obnovená stránka nebo zavřená aplikace nevrátila na začátek.
+// Ukládá se jen pořadí úloh (jako indexy do stálého seznamu generátorů) a skóre; konkrétní čísla se vygenerují znovu.
+const LESSON_KEY = 'ma1-lesson-v1';
+const LESSON_TTL = 12 * 3600 * 1000;
+function loadLessonSave(key, pool) {
+  if (!key || !pool) return null;
+  try {
+    const s = JSON.parse(localStorage.getItem(LESSON_KEY));
+    if (!s || s.key !== key || s.n !== pool.length || Date.now() - s.at > LESSON_TTL || !Array.isArray(s.queue)) return null;
+    const queue = s.queue.map(([i, tries, hinted]) => ({ f: pool[i], tries, hinted: !!hinted }));
+    if (!queue.length || queue.some(q => typeof q.f !== 'function') || !(s.pos >= 0 && s.pos <= queue.length)) return null;
+    return { ...s, queue };
+  } catch { return null; }
+}
+const clearLessonSave = () => { try { localStorage.removeItem(LESSON_KEY); } catch { /* nevadí */ } };
+
+/** resumeKey + pool: když jsou zadané, lekce se dá po obnovení stránky dokončit */
+function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, cheat, resumeKey, pool }) {
   // slabá místa se ukládají zvlášť pro každou cestu (klíče jako t1 nebo tableTyped jsou ve více cestách)
   const weakKey = k => (k && pathId ? `${pathId}/${k}` : k);
-  const queue = factories.map(f => ({ f, tries: 0 }));
-  let idx = 0, firstOk = 0, exercises = 0, t0 = performance.now(), cardT0 = 0;
-  let cur = null, phase = 'answer', cardData = null, attemptLog = [], row = 0, bestRow = 0, autoT = null;
+  const resumed = loadLessonSave(resumeKey, pool);
+  if (!resumed) clearLessonSave();
+  const queue = resumed ? resumed.queue : factories.map(f => ({ f, tries: 0 }));
+  let idx = resumed?.pos ?? 0, firstOk = resumed?.firstOk ?? 0, exercises = resumed?.exercises ?? 0;
+  let t0 = performance.now() - (resumed?.elapsed ?? 0) * 1000, cardT0 = 0;
+  let cur = null, phase = 'answer', cardData = null, attemptLog = resumed?.attemptLog ?? [], row = resumed?.row ?? 0, bestRow = resumed?.bestRow ?? 0, autoT = null;
   const drill = mode === 'drill';
+  function saveProgress(pos) {
+    if (!resumeKey || !pool) return;
+    try {
+      localStorage.setItem(LESSON_KEY, JSON.stringify({
+        key: resumeKey, n: pool.length, at: Date.now(), pos,
+        queue: queue.map(q => [pool.indexOf(q.f), q.tries, q.hinted ? 1 : 0]),
+        firstOk, exercises, row, bestRow, attemptLog: attemptLog.slice(-300), elapsed: (performance.now() - t0) / 1000,
+      }));
+    } catch { /* plné úložiště / soukromé okno: lekce jede dál, jen bez zálohy */ }
+  }
 
   const bar = h('div', { class: 'bar-fill' });
   const closeBtn = h('button', { class: 'icon-btn', 'aria-label': 'Ukončit lekci', html: ICONS.close, onclick: () => askClose() });
@@ -384,15 +414,16 @@ function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, 
   app.replaceChildren(screen);
 
   function askClose() {
-    if (idx === 0 && phase === 'answer') return go(back);
+    if (idx === 0 && phase === 'answer') { clearLessonSave(); return go(back); }
     modal('Chceš si dát pauzu?', 'V pohodě. Postup v téhle lekci se jen neuloží.', [
       { label: 'Pokračovat v lekci', primary: true },
-      { label: 'Odejít', fn: () => go(back) },
+      { label: 'Odejít', fn: () => { clearLessonSave(); go(back); } },
     ]);
   }
 
   function show() {
     if (idx >= queue.length) return finish();
+    saveProgress(idx);   // před započtením úlohy → po obnovení se tahle úloha započte jen jednou
     bar.style.width = `${100 * idx / queue.length}%`;
     const item = queue[idx];
     cardData = item.f();
@@ -454,6 +485,7 @@ function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, 
 
   function feedback(ok, r) {
     phase = 'feedback';
+    saveProgress(idx + 1);   // odpověď už je započtená → po obnovení se pokračuje další úlohou
     const parts = [];
     const title = r.dontKnow ? 'V pohodě, tady je postup:' : ok ? pick(PRAISE) : pick(SOFT);
     if (r.msg) parts.push(h('div', { class: 'fb-msg', html: m(r.msg) }));
@@ -482,6 +514,7 @@ function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, 
   function next() { clearTimeout(autoT); if (phase !== 'feedback' && !cur.passive) return; idx++; show(); }
 
   function finish() {
+    clearLessonSave();
     const time = (performance.now() - t0) / 1000;
     const acc = exercises ? firstOk / exercises : 1;
     const solved = attemptLog.filter(a => a.ok);
@@ -504,6 +537,7 @@ function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, 
   document.addEventListener('keydown', onKey);
   cleanup = () => { clearTimeout(autoT); document.removeEventListener('keydown', onKey); };
   show();
+  if (resumed && resumed.pos > 0 && idx < queue.length) toast('Pokračuješ tam, kde lekce skončila.');
 }
 
 function lessonScreen(id) {
@@ -514,6 +548,7 @@ function lessonScreen(id) {
   const back = '#/cesta/' + path.id;
   runLesson({
     factories: lesson.cards, title: lesson.title, back, mode: lesson.drill ? 'drill' : 'lesson', pathId: path.id, cheat: path.content.cheat,
+    resumeKey: 'lekce/' + id, pool: lesson.cards,
     onFinish: ({ time, acc, firstOk, exercises, avg, bestRow }) => {
       const prev = store.get().done[id];
       const tierBefore = lessonTier(id);
@@ -582,6 +617,7 @@ function practiceScreen(pathId) {
   const back = '#/cesta/' + p.id;
   runLesson({
     factories: shuffle(fs), title: 'Procvičování', back, pathId: p.id, cheat: p.content.cheat,
+    resumeKey: 'procvic/' + p.id, pool: [...new Set([...Object.values(p.gen), ...pool])],
     onFinish: ({ time, acc, firstOk, exercises }) => {
       const res = store.finishLesson('practice-' + p.id, { acc, time });
       endScreen({ title: 'Procvičeno!', sub: weak.length ? 'Zaměřeno na tvoje slabší místa' : 'Mix ze všeho', acc, time, exercises, res, back, again: '#/procvic/' + p.id });
@@ -597,6 +633,7 @@ function fluencyScreen(pathId) {
   const back = '#/cesta/' + p.id;
   runLesson({
     factories: fs, title: fl.title, back, mode: 'fluency', pathId: p.id,
+    resumeKey: 'plynulost/' + p.id, pool: fl.pool,
     onFinish: ({ time, acc, firstOk, exercises }) => {
       const hist = store.get().fluency.filter(f => f.path === p.id);
       const tierBefore = fluencyTier(p.id);

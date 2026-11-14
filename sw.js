@@ -1,7 +1,7 @@
 // Service worker: aplikace jde nainstalovat a funguje i offline.
 // Strategie „nejdřív síť“: online vždycky čerstvá verze, bez sítě poslední uložená.
 // Při větší změně stačí zvýšit číslo verze.
-const CACHE = 'ma1-v9';
+const CACHE = 'ma1-v10';
 const CORE = [
   './', './index.html', './manifest.webmanifest', './css/style.css',
   './vendor/katex/katex.min.css', './vendor/katex/katex.min.js',
