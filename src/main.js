@@ -212,12 +212,21 @@ function modal(title, body, actions) {
 }
 
 /** tahák: přehled vzorců a pravidel cesty, dá se otevřít kdykoli během lekce */
-function openSheet(title, sections) {
+/** state = { open: [indexy rozbalených sekcí], scroll } – když je zadaný, tahák se otevře tam, kde byl naposledy */
+function openSheet(title, sections, state) {
   if (document.querySelector('.modal-back')) return;
   const back = h('div', { class: 'modal-back sheet-back' });
   const close = () => back.remove();
-  const body = h('div', { class: 'sheet-body' }, sections.map((s, i) =>
-    h('details', { class: 'sheet-sec', open: i === 0 || null }, h('summary', {}, s.title), h('div', { class: 'info-body', html: m(s.html) }))));
+  const isOpen = i => (state?.open ? state.open.includes(i) : i === 0);
+  const secs = sections.map((s, i) =>
+    h('details', { class: 'sheet-sec', open: isOpen(i) || null }, h('summary', {}, s.title), h('div', { class: 'info-body', html: m(s.html) })));
+  const body = h('div', { class: 'sheet-body' }, secs);
+  if (state) {
+    // ukládá se průběžně, takže stav drží i zavření Escapem nebo kliknutím vedle
+    secs.forEach(d => d.addEventListener('toggle', () => { state.open = secs.map((x, i) => (x.open ? i : -1)).filter(i => i >= 0); }));
+    body.addEventListener('scroll', () => { state.scroll = Math.round(body.scrollTop); }, { passive: true });
+    requestAnimationFrame(() => { body.scrollTop = state.scroll || 0; });
+  }
   back.append(h('div', { class: 'sheet', role: 'dialog', 'aria-label': title },
     h('div', { class: 'sheet-head' }, h('h3', {}, title), h('button', { class: 'icon-btn', 'aria-label': 'Zavřít tahák', onclick: close, html: ICONS.close })), body));
   back.addEventListener('click', e => { if (e.target === back) close(); });
@@ -389,6 +398,8 @@ function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, 
   let t0 = performance.now() - (resumed?.elapsed ?? 0) * 1000, cardT0 = 0;
   let cur = null, phase = 'answer', cardData = null, attemptLog = resumed?.attemptLog ?? [], row = resumed?.row ?? 0, bestRow = resumed?.bestRow ?? 0, autoT = null;
   const drill = mode === 'drill';
+  // tahák si v rámci lekce pamatuje rozbalené sekce a místo, kde byl odscrollovaný (i přes obnovení stránky)
+  const sheetState = resumed?.sheet && Array.isArray(resumed.sheet.open) ? resumed.sheet : { open: [0], scroll: 0 };
   function saveProgress(pos) {
     if (!resumeKey || !pool) return;
     try {
@@ -396,6 +407,7 @@ function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, 
         key: resumeKey, n: pool.length, at: Date.now(), pos,
         queue: queue.map(q => [pool.indexOf(q.f), q.tries, q.hinted ? 1 : 0]),
         firstOk, exercises, row, bestRow, attemptLog: attemptLog.slice(-300), elapsed: (performance.now() - t0) / 1000,
+        sheet: sheetState,
       }));
     } catch { /* plné úložiště / soukromé okno: lekce jede dál, jen bez zálohy */ }
   }
@@ -407,7 +419,7 @@ function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, 
   const foot = h('footer', { class: 'lesson-foot' });
   // tahák je k dispozici v lekcích, drilech i procvičování; ve zkoušce plynulosti ne (tam se měří, co už umíš)
   const cheatBtn = cheat && mode !== 'fluency'
-    ? h('button', { class: 'cheat-btn', type: 'button', title: 'Tahák: vzorce a pravidla', 'aria-label': 'Otevřít tahák', onclick: () => openSheet('Tahák', cheat), html: ICONS.book + '<span>Tahák</span>' }) : null;
+    ? h('button', { class: 'cheat-btn', type: 'button', title: 'Tahák: vzorce a pravidla', 'aria-label': 'Otevřít tahák', onclick: () => openSheet('Tahák', cheat, sheetState), html: ICONS.book + '<span>Tahák</span>' }) : null;
   const screen = h('div', { class: 'lesson' }, h('div', { class: 'lesson-top' }, closeBtn, h('div', { class: 'bar lesson-bar' }, bar), drill ? rowPill : null, cheatBtn), stage, foot);
   const setRow = () => { rowPill.innerHTML = ICONS.bolt + `<b>${row}</b><span>v řadě</span>`; rowPill.classList.toggle('hot', row >= 3); };
   if (drill) setRow();
