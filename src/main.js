@@ -248,11 +248,13 @@ function homeScreen() {
   if (!st.seenWelcome) {
     main.append(h('section', { class: 'welcome' },
       h('h1', {}, 'Přežij MA1'),
-      h('p', {}, 'Definiční obory, derivace, limity, průběh funkce a integrály. Krátké lekce, příklady ze cvičení a videa k předmětu. Začíná se od úplných základů.'),
+      h('p', {}, 'Definiční obory, limity, derivace, průběh funkce a integrály, od úplných základů až po příklady jako na testu.'),
+      h('p', {}, 'Tohle není sbírka úloh, kterou se naučíš nazpaměť. Každý příklad se generuje náhodně, takže pořád dostáváš nová čísla.'),
       h('ul', { class: 'promise' },
-        h('li', {}, 'Lekce zabere pár minut.'),
-        h('li', {}, 'Když něco nevíš, tlačítko „Nevím“ ukáže celý postup.'),
-        h('li', {}, 'Za každou lekci je pohárek. Posbírej je všechny!')),
+        h('li', {}, 'Napíšeš výsledek a appka ho hned zkontroluje.'),
+        h('li', {}, 'Tlačítko „Nevím“ ukáže celý postup krok za krokem.'),
+        h('li', {}, 'Co pokazíš, dostaneš na konci znovu, s jinými čísly.'),
+        h('li', {}, 'Funguje to i offline a pokrok máš v mobilu i na počítači.')),
       h('button', { class: 'btn btn-primary', onclick: () => { store.set({ seenWelcome: true }); go('#/cesta/defobor'); } }, 'Začít')));
   }
   main.append(h('h2', { class: 'section-title' }, 'Tvoje cesty'));
