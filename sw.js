@@ -1,7 +1,7 @@
 // Service worker: aplikace jde nainstalovat a funguje i offline.
 // Strategie „nejdřív síť“: online vždycky čerstvá verze, bez sítě poslední uložená.
 // Při větší změně stačí zvýšit číslo verze.
-const CACHE = 'ma1-v12';
+const CACHE = 'ma1-v13';
 const CORE = [
   './', './index.html', './manifest.webmanifest', './css/style.css',
   './vendor/katex/katex.min.css', './vendor/katex/katex.min.js',
@@ -17,7 +17,8 @@ const CORE = [
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE)).then(() => self.skipWaiting()));
+  // cache: 'reload' = stáhnout čerstvě, ne z paměti prohlížeče
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {
@@ -35,8 +36,12 @@ self.addEventListener('fetch', e => {
   if (!ours && !fonts) return;
   // adresy s ?query (např. návrat z Googlu s ?code=…) se nekešují
   const cacheable = !(ours && url.search);
+  // Naše soubory se vždycky ověří u serveru (cache: 'no-cache' → krátké 304, když se nic nezměnilo).
+  // Jinak by prohlížeč po nasazení ještě 10 minut vracel staré kopie (GitHub Pages: max-age=600).
+  // Navigaci necháváme být: init u požadavku typu navigate nejde zadat a obnovení stránky ji stejně ověří.
+  const net = ours && req.mode !== 'navigate' ? fetch(req, { cache: 'no-cache' }) : fetch(req);
   e.respondWith(
-    fetch(req).then(res => {
+    net.then(res => {
       if (cacheable && res && (res.ok || res.type === 'opaque')) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
       return res;
     }).catch(() => caches.match(req).then(hit => hit || (req.mode === 'navigate' ? caches.match('./index.html') : Response.error()))),
