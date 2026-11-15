@@ -1,6 +1,6 @@
 // Vykreslení jednotlivých typů karet v lekci.
 import { h, m, shuffle, ICONS } from './ui.js';
-import { parseSet, PARSE_ERRORS, equal, sameEndpoints, complement, subset, normalize, toTex, endpoints } from './intervals.js';
+import { parseSet, PARSE_ERRORS, equal, sameEndpoints, complement, subset, normalize, toTex, toTexBoth, endpoints } from './intervals.js';
 import { numberLine } from './numberline.js';
 import * as S from './sym.js';
 
@@ -113,12 +113,17 @@ function sortCard(card) {
 }
 
 // ---------------------------------------------------------------- interval (psaná odpověď)
+// klávesa: [popisek, co vloží (| = kam skočí kurzor), třída]
+// celé kousky jako „(−∞, “ nebo „+∞)“ šetří ťukání, ∖ {} se rovnou zavře
 const KEYS = [
-  ['(', '⟨', ')', '⟩', ',', '∪'],
-  ['7', '8', '9', '−', '∞', '√'],
-  ['4', '5', '6', '/', 'e', '⌫'],
-  ['1', '2', '3', '0', '.', 'ℝ'],
+  ['(−∞,', '(−∞, ', 'tok'], ['(', '(', 'br'], ['⟨', '⟨', 'br'], [')', ')', 'br'], ['⟩', '⟩', 'br'], ['+∞)', '+∞)', 'tok'],
+  ['ℝ', 'ℝ', 'set'], ['∖ {}', ' ∖ {|}', 'set'], ['}', '}', 'set'], ['∪', ' ∪ ', 'set'], [',', ', ', 'set'], ['⌫', 'back', 'act'],
+  ['7'], ['8'], ['9'], ['−', '−', 'op'], ['/', '/', 'op'], ['√', '√', 'op'],
+  ['4'], ['5'], ['6'], ['e', 'e', 'op'], ['^', '^', 'op'], ['◀', 'left', 'act'],
+  ['1'], ['2'], ['3'], ['0'], ['.', '.', 'num'], ['▶', 'right', 'act'],
 ];
+// kousky, které ⌫ smaže najednou
+const TOKENS = [' ∖ {', '(−∞, ', ' ∪ ', ', ', '+∞)', '−∞', '+∞'];
 
 export function diagnose(user, ans, warn) {
   if (warn === 'infbracket') return 'U nekonečna patří vždycky kulatá závorka: nekonečna se nejde dotknout.';
@@ -142,38 +147,72 @@ export function diagnose(user, ans, warn) {
 function makeIntervalInput(label) {
   const input = h('input', {
     class: 'iv-input', type: 'text', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false',
-    placeholder: 'např. (−∞, 3⟩ ∪ (5, +∞)', 'aria-label': 'Tvoje odpověď',
+    placeholder: 'např. ℝ ∖ {1} nebo (−∞, 3⟩', 'aria-label': 'Tvoje odpověď',
   });
   if (coarse()) input.setAttribute('inputmode', 'none');
   const preview = h('div', { class: 'iv-preview' });
+  const sel = () => [input.selectionStart ?? input.value.length, input.selectionEnd ?? input.value.length];
+  const caret = p => { input.setSelectionRange(p, p); if (!coarse()) input.focus(); };
   const insert = txt => {
-    const s = input.selectionStart ?? input.value.length, e = input.selectionEnd ?? input.value.length;
-    input.value = input.value.slice(0, s) + txt + input.value.slice(e);
-    const p = s + txt.length;
-    input.setSelectionRange(p, p);
+    let [s, e] = sel();
+    const v = input.value;
+    // „}“ nebo „∪“ těsně před „}“: nejdřív vyskoč ze složených závorek
+    if (s === e && v[s] === '}' && (txt === '}' || txt === ' ∪ ')) {
+      s = e = s + 1;
+      if (txt === '}') { caret(s); update(); return; }
+    }
+    // mezery kolem ∪ / ∖ nezdvojovat
+    if (/^ /.test(txt) && v[s - 1] === ' ') txt = txt.slice(1);
+    const cut = txt.indexOf('|');
+    const clean = txt.replace('|', '');
+    input.value = v.slice(0, s) + clean + v.slice(e);
+    caret(s + (cut < 0 ? clean.length : cut));
     update();
-    if (!coarse()) input.focus();
   };
   const back = () => {
-    const s = input.selectionStart ?? input.value.length, e = input.selectionEnd ?? s;
-    if (s !== e) input.value = input.value.slice(0, s) + input.value.slice(e);
-    else if (s > 0) { input.value = input.value.slice(0, s - 1) + input.value.slice(s); input.setSelectionRange(s - 1, s - 1); }
+    const [s, e] = sel(), v = input.value;
+    if (s !== e) { input.value = v.slice(0, s) + v.slice(e); caret(s); update(); return; }
+    if (s === 0) return;
+    const before = v.slice(0, s);
+    let n = 1;
+    for (const t of TOKENS) if (before.endsWith(t)) { n = t.length; break; }
+    let after = v.slice(s);
+    // prázdné „∖ {}“ zmizí celé
+    if (before.endsWith(' ∖ {') && after.startsWith('}')) after = after.slice(1);
+    input.value = before.slice(0, s - n) + after;
+    caret(s - n);
     update();
   };
-  const pad = h('div', { class: 'keypad' }, KEYS.flat().map(k => h('button', {
-    class: 'key' + (/[0-9.]/.test(k) ? ' key-num' : ''), type: 'button', tabindex: '-1',
-    onmousedown: e => e.preventDefault(),
-    onclick: () => k === '⌫' ? back() : insert(k === ',' ? ', ' : k === '∪' ? ' ∪ ' : k === '−' ? '−' : k),
-  }, k)));
+  const move = d => { const [s, e] = sel(); caret(Math.max(0, Math.min(input.value.length, (d < 0 ? Math.min(s, e) : Math.max(s, e)) + (s === e ? d : 0)))); };
+  const run = k => k === 'back' ? back() : k === 'left' ? move(-1) : k === 'right' ? move(1) : insert(k);
+  // reakce hned na dotyk (ne až na puštění), ⌫ a šipky při podržení opakují
+  const pad = h('div', { class: 'keypad' }, KEYS.map(([label, ins = label, cls = 'num']) => {
+    let hold = null;
+    const stop = () => { clearTimeout(hold); clearInterval(hold); hold = null; btn.classList.remove('down'); };
+    const btn = h('button', {
+      class: `key key-${cls}`, type: 'button', tabindex: '-1', 'aria-label': ins === 'back' ? 'smazat' : ins === 'left' ? 'doleva' : ins === 'right' ? 'doprava' : label,
+      onpointerdown: e => {
+        if (e.button > 0) return;
+        e.preventDefault();
+        btn.classList.add('down');
+        if (e.isTrusted && navigator.vibrate && coarse()) try { navigator.vibrate(5); } catch {}
+        run(ins);
+        if (cls === 'act') hold = setTimeout(() => { hold = setInterval(() => run(ins), 60); }, 380);
+      },
+      onpointerup: stop, onpointerleave: stop, onpointercancel: stop,
+      onclick: e => { if (e.detail === 0) run(ins); }, // Enter/mezerník z klávesnice
+    }, label);
+    return btn;
+  }));
   function update() {
     const r = parseSet(input.value);
     if (!input.value.trim()) preview.innerHTML = '<span class="muted small">Tady uvidíš svou odpověď na ose.</span>';
     else if (r.ok) preview.innerHTML = numberLine(r.set);
     else preview.innerHTML = '<span class="muted small">…píšeš</span>';
   }
-  // hezké symboly už při psaní: inf → ∞, < → ⟨, U → ∪, - → −
+  // hezké symboly už při psaní: inf → ∞, < → ⟨, U → ∪, - → −, R → ℝ, \ → ∖
   const pretty = t => t.replace(/inf(inity)?/gi, '∞').replace(/sqrt/gi, '√').replace(/[<[]/g, '⟨').replace(/[>\]]/g, '⟩')
-    .replace(/-/g, '−').replace(/(^|[\s)⟩])[uU](?=[\s(⟨]|$)/g, '$1∪');
+    .replace(/-/g, '−').replace(/(^|[\s)⟩}])[uU](?=[\s(⟨{]|$)/g, '$1∪').replace(/R/g, 'ℝ').replace(/\\/g, '∖');
   input.addEventListener('input', () => {
     const s = input.selectionStart ?? input.value.length;
     const nb = pretty(input.value.slice(0, s)), na = pretty(input.value.slice(s));
@@ -199,7 +238,7 @@ function judgeInterval(ctl, answer, loose = false) {
   ctl.done();
   return {
     ok,
-    msg: ok ? `$${toTex(r.set)}$` : (loose && !r.warn ? 'Tohle ještě nesedí. Krajní body mají být nulové body derivace (a body, kde funkce není definovaná).' : diagnose(r.set, answer, r.warn)) + `<div class="cmp"><div><span class="muted small">Ty:</span>${numberLine(r.set)}</div><div><span class="muted small">Správně: $${toTex(answer)}$</span>${numberLine(answer)}</div></div>`,
+    msg: ok ? `$${toTexBoth(r.set)}$` : (loose && !r.warn ? 'Tohle ještě nesedí. Krajní body mají být nulové body derivace (a body, kde funkce není definovaná).' : diagnose(r.set, answer, r.warn)) + `<div class="cmp"><div><span class="muted small">Ty:</span>${numberLine(r.set)}</div><div><span class="muted small">Správně: $${toTexBoth(answer)}$</span>${numberLine(answer)}</div></div>`,
   };
 }
 
@@ -213,7 +252,7 @@ function intervalCard(card) {
       if (r.invalid) return r;
       return { ...r, steps: r.ok ? null : card.steps, stepsOptional: r.ok ? card.steps : null };
     },
-    reveal() { ctl.done(); return { msg: `Správně: $${toTex(card.answer)}$${numberLine(card.answer)}`, steps: card.steps }; },
+    reveal() { ctl.done(); return { msg: `Správně: $${toTexBoth(card.answer)}$${numberLine(card.answer)}`, steps: card.steps }; },
   };
 }
 
@@ -478,10 +517,10 @@ function guidedCard(card) {
   function judge(reveal) {
     const st = steps[si];
     if (ctl.kind === 'interval') {
-      if (reveal) { ctl.done(); return { ok: false, note: `Správně: $${toTex(st.answer)}$${numberLine(st.answer)}${st.why ? `<div>${st.why}</div>` : ''}` }; }
+      if (reveal) { ctl.done(); return { ok: false, note: `Správně: $${toTexBoth(st.answer)}$${numberLine(st.answer)}${st.why ? `<div>${st.why}</div>` : ''}` }; }
       const r = judgeInterval(ctl, st.answer, st.loose);
       if (r.invalid) return r;
-      return { ok: r.ok, note: r.ok ? `✓ $${toTex(st.answer)}$` : r.msg + (st.why ? `<div class="gwhy">${st.why}</div>` : '') };
+      return { ok: r.ok, note: r.ok ? `✓ $${toTexBoth(st.answer)}$` : r.msg + (st.why ? `<div class="gwhy">${st.why}</div>` : '') };
     }
     if (ctl.kind === 'integral') {
       if (reveal) { ctl.done(); return { ok: false, note: `Správně: $${S.tex(st.answer)} + C$${st.why ? `<div class="gwhy">${st.why}</div>` : ''}` }; }

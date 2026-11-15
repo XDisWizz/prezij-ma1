@@ -290,8 +290,18 @@ button.path-card:active { transform: translateY(2px); }
   font: inherit; font-size: 20px; font-weight: 800; padding: 10px 0; border-radius: 12px; cursor: pointer;
   background: var(--surface); color: var(--text); border: 2px solid var(--line); box-shadow: 0 3px 0 var(--line);
 }
-.key:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--line); }
+.key {
+  touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+  min-height: 46px; line-height: 1; transition: transform .05s, box-shadow .05s, background-color .1s;
+}
+.key:active, .key.down { transform: translateY(2px); box-shadow: 0 1px 0 var(--line); }
 .key-num { background: var(--surface-2); }
+.key-tok { font-size: 17px; background: var(--blue-soft); color: var(--blue); border-color: color-mix(in srgb, var(--blue) 35%, var(--line)); }
+.key-br { font-size: 22px; }
+.key-set { background: var(--violet-soft); color: var(--violet); border-color: color-mix(in srgb, var(--violet) 30%, var(--line)); }
+.key-op { color: var(--muted); }
+.key-act { background: var(--surface-2); color: var(--muted); font-family: 'Nunito', system-ui, sans-serif; }
+.key.down.key-tok, .key.down.key-set { filter: brightness(.95); }
 .hint { display: flex; gap: 10px; align-items: flex-start; margin-top: 16px; background: var(--violet-soft); color: var(--violet); border-radius: 14px; padding: 12px 14px; font-weight: 700; }
 .hint svg { width: 22px; height: 22px; flex: none; }
 
@@ -412,6 +422,8 @@ td.st-minus { color: #d85a30; font-weight: 800; }
   .foot-row .btn-primary { min-width: 0; flex: 1; }
   .foot-left .btn { padding: 12px 14px; }
   .key { font-size: 18px; padding: 9px 0; }
+  .key-tok { font-size: 15px; }
+  .keypad { gap: 6px; }
   .node-btn { width: 66px; height: 66px; }
 }
 @media (prefers-reduced-motion: reduce) {

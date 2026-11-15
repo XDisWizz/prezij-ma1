@@ -105,6 +105,13 @@ export function toTex(set) {
   return set.map(I => eq(I.a.v, I.b.v) ? `\\{${I.a.tex}\\}`
     : `${I.ai ? '\\langle' : '('}${I.a.tex}, ${I.b.tex}${I.bi ? '\\rangle' : ')'}`).join(' \\cup ');
 }
+/** Jako toTex, ale ℝ bez pár bodů navíc ukáže i krátce: (−∞, 1) ∪ (1, +∞) = ℝ ∖ {1} */
+export function toTexBoth(set) {
+  const full = toTex(set);
+  const c = complement(set);
+  if (!c.length || !c.every(I => eq(I.a.v, I.b.v))) return full;
+  return `${full} = \\mathbb{R} \\setminus \\{${c.map(I => I.a.tex).join(', ')}\\}`;
+}
 export function toText(set) {
   set = normalize(set);
   if (!set.length) return '∅';
@@ -199,49 +206,71 @@ function endpointFrom(raw) {
   return { v, tex: t, txt: t.replace(/-/g, '−') };
 }
 
-/** Vrací { ok, set, warn } nebo { ok:false, error } */
+/** rozdělí podle ∪ / ∖ mimo závorky: [{ op, text }] */
+function splitOps(str) {
+  const parts = []; let depth = 0, cur = '', op = '∪';
+  for (const ch of str) {
+    if ('(⟨{'.includes(ch)) depth++;
+    if (')⟩}'.includes(ch)) depth--;
+    if (depth === 0 && (ch === '∪' || ch === '∖')) { parts.push({ op, text: cur.trim() }); cur = ''; op = ch; } else cur += ch;
+  }
+  parts.push({ op, text: cur.trim() });
+  return parts;
+}
+
+/** jedna množina: ℝ, ∅, {body}, nebo interval */
+function parsePart(p) {
+  if (/^[Rℝ]$/.test(p)) return { set: R() };
+  if (p === '∅' || p === '{}') return { set: [] };
+  const pm = /^\{(.*)\}$/.exec(p);
+  if (pm) return { set: union(...splitTop(pm[1], [',', ';']).map(x => point(endpointFrom(x)))) };
+  const L = p[0], Rb = p[p.length - 1];
+  if (!L || !'(⟨'.includes(L) || !')⟩'.includes(Rb)) return { error: 'brackets' };
+  const inner = p.slice(1, -1);
+  let ends = splitTop(inner, [';']);
+  if (ends.length !== 2) ends = splitTop(inner, [',']);
+  if (ends.length !== 2) return { error: ends.length > 2 ? 'decimal' : 'pair' };
+  const a = endpointFrom(ends[0]), b = endpointFrom(ends[1]);
+  if (a.v === Infinity || b.v === -Infinity) return { error: 'order' };
+  if (a.v > b.v + EPS) return { error: 'order' };
+  let ai = L === '⟨', bi = Rb === '⟩', warn = null;
+  if ((a.v === -Infinity && ai) || (b.v === Infinity && bi)) warn = 'infbracket';
+  if (a.v === -Infinity) { a.tex = '-\\infty'; a.txt = '−∞'; ai = false; }
+  if (b.v === Infinity) { b.tex = '+\\infty'; b.txt = '+∞'; bi = false; }
+  return { set: [{ a, b, ai, bi }], warn };
+}
+
+/** Vrací { ok, set, warn } nebo { ok:false, error }.
+ *  Umí sjednocení i rozdíl, čteno zleva: ℝ ∖ {1, 2}, (0, +∞) ∖ {1}, (−∞, 0) ∪ (0, 5) ∖ {2} */
 export function parseSet(input) {
   let s = (input || '').trim();
   if (!s) return { ok: false, error: 'empty' };
   s = s.replace(/[<\[]/g, '⟨').replace(/[>\]]/g, '⟩').replace(/〈/g, '⟨').replace(/〉/g, '⟩')
-    .replace(/\s+[uU]\s+/g, ' ∪ ').replace(/([)⟩}])\s*[uU]\s*(?=[(⟨{Rℝ])/g, '$1∪').replace(/−/g, '-').replace(/\binf(inity)?\b/gi, '∞');
-  let warn = null;
-  const parts = s.split('∪').map(p => p.trim());
-  const sets = [];
+    .replace(/[\\⧵﹨]/g, '∖')
+    .replace(/\s+[uU]\s+/g, ' ∪ ').replace(/([)⟩}])\s*[uU]\s*(?=[(⟨{Rℝ∅])/g, '$1∪').replace(/−/g, '-').replace(/\binf(inity)?\b/gi, '∞')
+    // R - {1}, R/{1} → R ∖ {1} (minus/lomítko jen mezi množinami, ne v čísle)
+    .replace(/([Rℝ)⟩}∅])\s*[-/]\s*(?=[{(⟨Rℝ])/g, '$1∖');
+  let warn = null, acc = null;
   try {
-    for (const p of parts) {
-      if (/^[Rℝ]$/.test(p)) { sets.push(R()); continue; }
-      const mm = /^[Rℝ]\s*[\\∖-]\s*\{(.*)\}$/.exec(p);
-      if (mm) { sets.push(without(R(), ...splitTop(mm[1], [',', ';']).map(endpointFrom))); continue; }
-      const pm = /^\{(.*)\}$/.exec(p);
-      if (pm) { sets.push(...splitTop(pm[1], [',', ';']).map(x => point(endpointFrom(x)))); continue; }
-      if (p === '∅' || p === '{}') continue;
-      const L = p[0], Rb = p[p.length - 1];
-      if (!'(⟨'.includes(L) || !')⟩'.includes(Rb)) return { ok: false, error: 'brackets' };
-      const inner = p.slice(1, -1);
-      let ends = splitTop(inner, [';']);
-      if (ends.length !== 2) ends = splitTop(inner, [',']);
-      if (ends.length !== 2) return { ok: false, error: ends.length > 2 ? 'decimal' : 'pair' };
-      const a = endpointFrom(ends[0]), b = endpointFrom(ends[1]);
-      if (a.v === Infinity || b.v === -Infinity) return { ok: false, error: 'order' };
-      if (a.v > b.v + EPS) return { ok: false, error: 'order' };
-      let ai = L === '⟨', bi = Rb === '⟩';
-      if ((a.v === -Infinity && ai) || (b.v === Infinity && bi)) { warn = 'infbracket'; }
-      if (a.v === -Infinity) { a.tex = '-\\infty'; a.txt = '−∞'; ai = false; }
-      if (b.v === Infinity) { b.tex = '+\\infty'; b.txt = '+∞'; bi = false; }
-      sets.push([{ a, b, ai, bi }]);
+    for (const { op, text } of splitOps(s)) {
+      if (!text) return { ok: false, error: op === '∖' ? 'minus' : 'brackets' };
+      const r = parsePart(text);
+      if (r.error) return { ok: false, error: r.error };
+      if (r.warn) warn = r.warn;
+      acc = acc == null ? r.set : op === '∪' ? union(acc, r.set) : intersect(acc, complement(r.set));
     }
   } catch (e) {
     return { ok: false, error: 'expr' };
   }
-  return { ok: true, set: union(...sets), warn };
+  return { ok: true, set: normalize(acc), warn };
 }
 
 export const PARSE_ERRORS = {
-  empty: 'Napiš odpověď, třeba (−∞, 3⟩ ∪ (5, +∞).',
+  empty: 'Napiš odpověď, třeba (−∞, 3⟩ ∪ (5, +∞) nebo ℝ ∖ {1}.',
   brackets: 'Každý interval začíná závorkou ( nebo ⟨ a končí ) nebo ⟩.',
   decimal: 'Desetinná čísla piš s tečkou (1.5), čárka odděluje krajní body.',
   pair: 'Interval potřebuje dva krajní body oddělené čárkou.',
   order: 'Menší číslo patří doleva, větší doprava.',
+  minus: 'Za ∖ napiš, co vyhazuješ, třeba ℝ ∖ {1, 2}.',
   expr: 'Jedno z čísel nedokážu přečíst. Zkus třeba 3, −1/2, √2 nebo e.',
 };
