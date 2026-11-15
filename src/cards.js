@@ -1,5 +1,6 @@
 // Vykreslení jednotlivých typů karet v lekci.
 import { h, m, shuffle, ICONS } from './ui.js';
+import { mathField } from './mathfield.js';
 import { parseSet, PARSE_ERRORS, equal, sameEndpoints, complement, subset, normalize, toTex, toTexBoth, endpoints } from './intervals.js';
 import { numberLine } from './numberline.js';
 import * as S from './sym.js';
@@ -150,9 +151,10 @@ function makeIntervalInput(label) {
     placeholder: 'např. ℝ ∖ {1} nebo (−∞, 3⟩', 'aria-label': 'Tvoje odpověď',
   });
   if (coarse()) input.setAttribute('inputmode', 'none');
+  const field = mathField(input, { coarse });
   const preview = h('div', { class: 'iv-preview' });
   const sel = () => [input.selectionStart ?? input.value.length, input.selectionEnd ?? input.value.length];
-  const caret = p => { input.setSelectionRange(p, p); if (!coarse()) input.focus(); };
+  const caret = p => { input.setSelectionRange(p, p); if (!coarse()) input.focus(); field.render(); };
   const insert = txt => {
     let [s, e] = sel();
     const v = input.value;
@@ -205,6 +207,7 @@ function makeIntervalInput(label) {
     return btn;
   }));
   function update() {
+    field.render();
     const r = parseSet(input.value);
     if (!input.value.trim()) preview.innerHTML = '<span class="muted small">Tady uvidíš svou odpověď na ose.</span>';
     else if (r.ok) preview.innerHTML = numberLine(r.set);
@@ -220,12 +223,12 @@ function makeIntervalInput(label) {
     update();
   });
   update();
-  const box = h('div', { class: 'iv-box' }, h('div', { class: 'iv-row' }, h('span', { class: 'iv-label' }, label), input), preview, pad);
+  const box = h('div', { class: 'iv-box' }, h('div', { class: 'iv-row' }, h('span', { class: 'iv-label' }, label), field.el), preview, pad);
   return {
     box,
     focus: () => { if (!coarse()) input.focus(); },
     parse: () => parseSet(input.value),
-    done: () => { input.disabled = true; pad.remove(); preview.remove(); },
+    done: () => { input.disabled = true; field.render(); pad.remove(); preview.remove(); },
   };
 }
 

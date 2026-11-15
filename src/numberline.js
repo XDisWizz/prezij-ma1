@@ -9,7 +9,8 @@ import { normalize, endpoints, eq, isR } from './intervals.js';
 export function numberLine(set, opts = {}) {
   set = normalize(set);
   const pts = endpoints(set, ...(opts.extra || []).map(p => [{ a: p, b: p, ai: true, bi: true }]));
-  const W = 340, H = 64, pad = 18, y = 26;
+  const W = 340, pad = 18, y = 26;
+  const H = pts.some(p => isFrac(p.txt)) ? 78 : 64;
   const n = pts.length;
   const xs = pts.map((_, i) => pad + 20 + (i + 1) * (W - 2 * pad - 40) / (n + 1));
   const xOf = p => p.v === -Infinity ? pad : p.v === Infinity ? W - pad : xs[pts.findIndex(q => eq(q.v, p.v))];
@@ -33,7 +34,7 @@ export function numberLine(set, opts = {}) {
     if (state === 'in') g += `<circle class="nl-dot-in" cx="${x}" cy="${y}" r="6"/>`;
     else if (state === 'out') g += `<circle class="nl-dot-out" cx="${x}" cy="${y}" r="6"/>`;
     else g += `<line class="nl-tick" x1="${x}" y1="${y - 5}" x2="${x}" y2="${y + 5}"/>`;
-    g += `<text class="nl-label" x="${x}" y="${y + 26}" text-anchor="middle">${esc(p.txt)}</text>`;
+    g += labelSvg(p.txt, x, y + 26);
   });
   if (!set.length) g += `<text class="nl-note" x="${W / 2}" y="${y - 10}" text-anchor="middle">prázdná množina</text>`;
   else if (isR(set)) g += `<text class="nl-note" x="${W / 2}" y="${y - 10}" text-anchor="middle">všechna reálná čísla</text>`;
@@ -42,6 +43,23 @@ export function numberLine(set, opts = {}) {
 }
 
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+
+// popisek bodu: zlomek pod sebou (−7/3), mocnina nahoře (e^2)
+const FRAC = /^(−?)([^/]+)\/([^/]+)$/;
+const isFrac = t => FRAC.test(String(t));
+const sup = t => esc(t).replace(/\^\(?(−?[^)]+)\)?$/, '<tspan class="nl-sup" dy="-6">$1</tspan>');
+function labelSvg(txt, x, yb) {
+  const m = FRAC.exec(String(txt));
+  if (!m) return `<text class="nl-label" x="${x}" y="${yb}" text-anchor="middle">${sup(txt)}</text>`;
+  const [, sign, num, den] = m;
+  const w = Math.max(num.length, den.length) * 7.5 + 6;
+  const yBar = yb - 3;
+  let g = `<text class="nl-label nl-frac" x="${x}" y="${yBar - 4}" text-anchor="middle">${sup(num)}</text>`
+    + `<line class="nl-bar" x1="${x - w / 2}" y1="${yBar}" x2="${x + w / 2}" y2="${yBar}"/>`
+    + `<text class="nl-label nl-frac" x="${x}" y="${yBar + 14}" text-anchor="middle">${sup(den)}</text>`;
+  if (sign) g += `<text class="nl-label" x="${x - w / 2 - 2}" y="${yBar + 5}" text-anchor="end">−</text>`;
+  return g;
+}
 
 /** Tabulka znamének: points = [{txt|tex}], rows = [{label(tex), signs:['+','-',...]}] */
 export function signTable(points, rows) {

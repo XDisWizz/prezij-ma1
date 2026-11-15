@@ -200,10 +200,19 @@ function splitTop(str, seps) {
   return parts;
 }
 
+/** text krajního bodu → TeX (−7/3 → -\frac{7}{3}, √2 → \sqrt{2}, e^-1 → \mathrm{e}^{-1}) */
+export function textToTex(t) {
+  const part = x => x.replace(/√([\d.]+|[eπ])/g, '\\sqrt{$1}').replace(/\^\(?(-?[\d.]+|-?[eπ])\)?/g, '^{$1}')
+    .replace(/π/g, '\\pi ').replace(/e/g, '\\mathrm{e}').replace(/∞/g, '\\infty ');
+  const s = t.replace(/−/g, '-').replace(/\s+/g, '');
+  const m = /^(-?)([^/]+)\/([^/]+)$/.exec(s);
+  return m ? `${m[1]}\\frac{${part(m[2])}}{${part(m[3])}}` : part(s);
+}
+
 function endpointFrom(raw) {
   const t = raw.trim();
   const v = evalExpr(t);
-  return { v, tex: t, txt: t.replace(/-/g, '−') };
+  return { v, tex: textToTex(t), txt: t.replace(/-/g, '−') };
 }
 
 /** rozdělí podle ∪ / ∖ mimo závorky: [{ op, text }] */

@@ -283,6 +283,29 @@ button.path-card:active { transform: translateY(2px); }
 }
 .key { font-family: 'Cambria Math', 'STIX Two Math', 'Nunito', serif; }
 .iv-input:focus { border-color: #378add; outline: none; }
+
+/* políčko se sazbou (zlomky pod sebou); skutečný input je schovaný */
+.mf { position: relative; flex: 1; min-width: 0; }
+.mf-input.iv-input { position: absolute; left: 0; top: 0; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; pointer-events: none; }
+.mf-view {
+  display: flex; align-items: center; min-height: 64px; padding: 6px 16px; border-radius: var(--radius); cursor: text;
+  border: 2px solid var(--line); background: var(--surface); color: var(--text); overflow-x: auto; scrollbar-width: none;
+  font-size: 22px; font-weight: 700; font-family: 'Cambria Math', 'STIX Two Math', 'Nunito', serif; font-variant-numeric: tabular-nums;
+}
+.mf.focus .mf-view { border-color: #378add; }
+.mf.disabled .mf-view { cursor: default; opacity: .85; }
+.mf-line { white-space: nowrap; line-height: 1.2; }
+.mf-placeholder { color: var(--muted); font-weight: 600; font-size: 18px; font-family: 'Nunito', system-ui, sans-serif; }
+.mf-frac { display: inline-flex; flex-direction: column; align-items: stretch; vertical-align: middle; font-size: .82em; margin: 0 2px; text-align: center; line-height: 1.1; }
+.mf-num { border-bottom: 2px solid currentColor; padding: 0 3px 1px; }
+.mf-den { padding: 1px 3px 0; }
+.mf-sqrt { border-top: 2px solid currentColor; padding: 1px 1px 0; margin-left: 1px; }
+.mf-sup { font-size: .65em; vertical-align: .7em; }
+.mf-ph { display: inline-block; min-width: .6em; height: .85em; border: 1.5px dashed var(--muted); border-radius: 3px; vertical-align: middle; margin: 0 1px; }
+.mf-ph .mf-caret { height: 100%; }
+.mf-caret { display: inline-block; width: 0; height: 1.05em; margin-right: -2px; border-left: 2px solid #378add; vertical-align: middle; animation: mf-blink 1.05s steps(1) infinite; }
+@keyframes mf-blink { 50% { border-left-color: transparent; } }
+.mf-sel { background: color-mix(in srgb, #378add 35%, transparent); border-radius: 2px; }
 .iv-preview { min-height: 74px; display: flex; align-items: center; justify-content: center; padding: 4px 0; }
 .keypad { display: grid; grid-template-columns: repeat(6, 1fr); gap: 7px; margin-top: 4px; }
 .keypad.disabled { opacity: .45; pointer-events: none; }
@@ -317,6 +340,9 @@ button.path-card:active { transform: translateY(2px); }
 .nl-dot-out { fill: var(--surface); stroke: var(--primary-dark); stroke-width: 2.5; }
 .nl-tick { stroke: var(--muted); stroke-width: 1.5; }
 .nl-label { fill: var(--text); font: 700 14px 'Nunito', sans-serif; }
+.nl-label.nl-frac { font-size: 12.5px; }
+.nl-bar { stroke: var(--text); stroke-width: 1.4; }
+.nl-sup { font-size: 10px; }
 .nl-note { fill: var(--muted); font: 700 13px 'Nunito', sans-serif; }
 .parabola { width: 100%; max-width: 260px; display: block; margin: 8px auto; }
 .pb-curve { fill: none; stroke: #378add; stroke-width: 3; }

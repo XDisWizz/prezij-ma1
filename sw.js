@@ -1,14 +1,14 @@
 // Service worker: aplikace jde nainstalovat a funguje i offline.
 // Strategie „nejdřív síť“: online vždycky čerstvá verze, bez sítě poslední uložená.
 // Při větší změně stačí zvýšit číslo verze.
-const CACHE = 'ma1-v13';
+const CACHE = 'ma1-v14';
 const CORE = [
   './', './index.html', './manifest.webmanifest', './css/style.css',
   './vendor/katex/katex.min.css', './vendor/katex/katex.min.js',
   // písma KaTeXu, aby sazba fungovala i při prvním spuštění bez sítě
   './vendor/katex/fonts/KaTeX_AMS-Regular.woff2', './vendor/katex/fonts/KaTeX_Main-Bold.woff2', './vendor/katex/fonts/KaTeX_Main-BoldItalic.woff2', './vendor/katex/fonts/KaTeX_Main-Italic.woff2', './vendor/katex/fonts/KaTeX_Main-Regular.woff2', './vendor/katex/fonts/KaTeX_Math-BoldItalic.woff2', './vendor/katex/fonts/KaTeX_Math-Italic.woff2', './vendor/katex/fonts/KaTeX_Size1-Regular.woff2', './vendor/katex/fonts/KaTeX_Size2-Regular.woff2', './vendor/katex/fonts/KaTeX_Size3-Regular.woff2', './vendor/katex/fonts/KaTeX_Size4-Regular.woff2',
   './icons/icon.svg', './icons/favicon-32.png', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png',
-  './src/main.js', './src/ui.js', './src/cards.js', './src/store.js', './src/theme-boot.js', './src/config.js', './src/sync.js', './src/syncmerge.js', './vendor/supabase/auth-js.mjs', './src/sym.js', './src/trophy.js', './src/intervals.js', './src/numberline.js',
+  './src/main.js', './src/ui.js', './src/cards.js', './src/store.js', './src/theme-boot.js', './src/config.js', './src/sync.js', './src/syncmerge.js', './vendor/supabase/auth-js.mjs', './src/sym.js', './src/trophy.js', './src/intervals.js', './src/numberline.js', './src/mathfield.js',
   './src/defobor/content.js', './src/defobor/gen.js', './src/defobor/gonio.js',
   './src/derivace/content.js', './src/derivace/gen.js',
   './src/limity/content.js', './src/limity/gen.js',
