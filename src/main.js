@@ -286,7 +286,7 @@ function homeScreen() {
     h('span', { class: 'path-text' }, h('b', {}, 'Sbírka pohárků'), h('span', { class: 'muted' }, `${tc.gold} z ${tc.total} zlatých · celkem ${tc.earned} pohárků`)),
     h('span', { class: 'coll-card-mini', html: `${trophySvg(3, 20)}${tc.gold} ${trophySvg(2, 20)}${tc.silver} ${trophySvg(1, 20)}${tc.bronze}` })));
   main.append(h('div', { class: 'install-slot home-install' }, installButton()));
-  main.append(h('p', { class: 'footnote muted small', html: 'Videa: <a href="https://homel.vsb.cz/~vod03/vyuka/VIDEA/MA1-videa/" target="_blank" rel="noopener">MA1 videa (VŠB-TUO)</a>. ' + (sync.isLoggedIn() ? 'Pokrok se synchronizuje přes tvůj účet Google.' : 'Pokrok se ukládá v tomhle prohlížeči.') }));
+  if (sync.isLoggedIn()) main.append(h('p', { class: 'footnote muted small' }, 'Pokrok se synchronizuje přes tvůj účet Google.'));
   app.replaceChildren(topbar(null, null), main);
 }
 
