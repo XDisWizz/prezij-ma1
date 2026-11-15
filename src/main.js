@@ -372,15 +372,30 @@ function pathScreen(id) {
 
 // ------------------------------------------------------------ lekce
 // Rozpracovaná lekce se průběžně ukládá, aby ji omylem obnovená stránka nebo zavřená aplikace nevrátila na začátek.
-// Ukládá se jen pořadí úloh (jako indexy do stálého seznamu generátorů) a skóre; konkrétní čísla se vygenerují znovu.
+// Ukládá se pořadí úloh (jako indexy do stálého seznamu generátorů), skóre a „semínko“ náhody každé úlohy,
+// takže po obnovení nebo návratu do lekce vyjde přesně stejný příklad (se stejnými čísly).
 const LESSON_KEY = 'ma1-lesson-v1';
+const newSeed = () => (Math.random() * 4294967296) >>> 0;
+/** fn() poběží s Math.random řízeným semínkem (mulberry32) → pokaždé stejný výsledek */
+function seeded(seed, fn) {
+  const orig = Math.random;
+  let a = seed >>> 0;
+  Math.random = () => {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  try { return fn(); } finally { Math.random = orig; }
+}
 const LESSON_TTL = 12 * 3600 * 1000;
 function loadLessonSave(key, pool) {
   if (!key || !pool) return null;
   try {
     const s = JSON.parse(localStorage.getItem(LESSON_KEY));
     if (!s || s.key !== key || s.n !== pool.length || Date.now() - s.at > LESSON_TTL || !Array.isArray(s.queue)) return null;
-    const queue = s.queue.map(([i, tries, hinted]) => ({ f: pool[i], tries, hinted: !!hinted }));
+    const queue = s.queue.map(([i, tries, hinted, seed]) => ({ f: pool[i], tries, hinted: !!hinted, seed: Number.isInteger(seed) ? seed : newSeed() }));
     if (!queue.length || queue.some(q => typeof q.f !== 'function') || !(s.pos >= 0 && s.pos <= queue.length)) return null;
     return { ...s, queue };
   } catch { return null; }
@@ -393,7 +408,7 @@ function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, 
   const weakKey = k => (k && pathId ? `${pathId}/${k}` : k);
   const resumed = loadLessonSave(resumeKey, pool);
   if (!resumed) clearLessonSave();
-  const queue = resumed ? resumed.queue : factories.map(f => ({ f, tries: 0 }));
+  const queue = resumed ? resumed.queue : factories.map(f => ({ f, tries: 0, seed: newSeed() }));
   let idx = resumed?.pos ?? 0, firstOk = resumed?.firstOk ?? 0, exercises = resumed?.exercises ?? 0;
   let t0 = performance.now() - (resumed?.elapsed ?? 0) * 1000, cardT0 = 0;
   let cur = null, phase = 'answer', cardData = null, attemptLog = resumed?.attemptLog ?? [], row = resumed?.row ?? 0, bestRow = resumed?.bestRow ?? 0, autoT = null;
@@ -405,7 +420,7 @@ function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, 
     try {
       localStorage.setItem(LESSON_KEY, JSON.stringify({
         key: resumeKey, n: pool.length, at: Date.now(), pos,
-        queue: queue.map(q => [pool.indexOf(q.f), q.tries, q.hinted ? 1 : 0]),
+        queue: queue.map(q => [pool.indexOf(q.f), q.tries, q.hinted ? 1 : 0, q.seed]),
         firstOk, exercises, row, bestRow, attemptLog: attemptLog.slice(-300), elapsed: (performance.now() - t0) / 1000,
         sheet: sheetState,
       }));
@@ -426,10 +441,11 @@ function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, 
   app.replaceChildren(screen);
 
   function askClose() {
-    if (idx === 0 && phase === 'answer') { clearLessonSave(); return go(back); }
-    modal('Chceš si dát pauzu?', 'V pohodě. Postup v téhle lekci se jen neuloží.', [
+    // rozpracovaná lekce se při odchodu nemaže: když se vrátíš, čeká tam stejný příklad
+    if (idx === 0 && phase === 'answer') return go(back);
+    modal('Chceš si dát pauzu?', 'V pohodě. Když se do 12 hodin vrátíš, pokračuje se tam, kde jsi teď, i se stejným příkladem.', [
       { label: 'Pokračovat v lekci', primary: true },
-      { label: 'Odejít', fn: () => { clearLessonSave(); go(back); } },
+      { label: 'Odejít', fn: () => go(back) },
     ]);
   }
 
@@ -438,9 +454,10 @@ function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, 
     saveProgress(idx);   // před započtením úlohy → po obnovení se tahle úloha započte jen jednou
     bar.style.width = `${100 * idx / queue.length}%`;
     const item = queue[idx];
-    cardData = item.f();
+    item.seed ??= newSeed();
+    cardData = seeded(item.seed, () => item.f());
     (window.__ma1 ||= {}).card = cardData;
-    cur = renderCard(cardData);
+    cur = seeded(item.seed ^ 0x9E3779B9, () => renderCard(cardData));   // i pořadí možností zůstane stejné
     phase = 'answer';
     cardT0 = performance.now();
     stage.replaceChildren(cur.el);
@@ -466,7 +483,7 @@ function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, 
 
   function requeue() {
     const it = item();
-    if (mode !== 'fluency' && it.tries < 2) queue.push({ f: it.f, tries: it.tries + 1 });
+    if (mode !== 'fluency' && it.tries < 2) queue.push({ f: it.f, tries: it.tries + 1, seed: newSeed() });   // podobný příklad, jiná čísla
   }
 
   function check() {
