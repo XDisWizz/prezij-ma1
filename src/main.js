@@ -155,7 +155,12 @@ function syncStatusText(st) {
     default: return '';
   }
 }
-/** nabídka po spuštění pro nepřihlášené */
+/** nabídnout přihlášení? jen nepřihlášeným, online a až po první dokončené lekci */
+const canOfferSync = () => sync.configured && !sync.isLoggedIn() && !sync.hasStoredLogin() && navigator.onLine
+  && Object.keys(store.get().done).length > 0;
+// po úplně první dokončené lekci se nabídka ukáže, jakmile zmizí obrazovka s pohárkem
+let offerAfterEnd = false;
+/** nabídka přihlášení: po první lekci a pak při každém spuštění, dokud se uživatel nepřihlásí */
 function syncOffer() {
   if (document.querySelector('.modal-back')) return;
   const back = h('div', { class: 'modal-back' });
@@ -167,8 +172,7 @@ function syncOffer() {
     h('p', { class: 'muted small' }, 'Bez přihlášení funguje všechno dál, pokrok jen zůstane v tomhle prohlížeči. Ukládá se jen pokrok v lekcích.'),
     h('div', { class: 'modal-actions' },
       googleButton(),
-      h('button', { class: 'btn btn-ghost', type: 'button', onclick: close }, 'Teď ne')),
-    h('button', { class: 'link-btn muted small', type: 'button', onclick: () => { store.set({ syncNoAsk: true }); close(); toast('Dobře. Přihlásit se jde kdykoli v Nastavení.'); } }, 'Už se neptat')));
+      h('button', { class: 'btn btn-ghost', type: 'button', onclick: () => { close(); toast('Přihlásit se jde kdykoli v Nastavení.'); } }, 'Teď ne'))));
   document.body.append(back);
 }
 function syncBlock() {
@@ -255,7 +259,7 @@ function homeScreen() {
         h('li', {}, 'Tlačítko „Nevím“ ukáže celý postup krok za krokem.'),
         h('li', {}, 'Co pokazíš, dostaneš na konci znovu, s jinými čísly.'),
         h('li', {}, 'Funguje to i offline a pokrok máš v mobilu i na počítači.')),
-      h('button', { class: 'btn btn-primary', onclick: () => { store.set({ seenWelcome: true }); go('#/cesta/defobor'); } }, 'Začít')));
+      h('button', { class: 'btn btn-primary', onclick: () => { store.set({ seenWelcome: true }); route(); } }, 'Začít')));
   }
   main.append(h('h2', { class: 'section-title' }, 'Tvoje cesty'));
   const grid = h('div', { class: 'path-grid' });
@@ -582,6 +586,7 @@ function lessonScreen(id) {
     resumeKey: 'lekce/' + id, pool: lesson.cards,
     onFinish: ({ time, acc, firstOk, exercises, avg, bestRow }) => {
       const prev = store.get().done[id];
+      if (!Object.keys(store.get().done).length) offerAfterEnd = true;
       const tierBefore = lessonTier(id);
       const res = store.finishLesson(id, { acc, time, avg });
       const trophy = { before: tierBefore, now: lessonTier(id), got: tierFromAcc(acc) };
@@ -806,14 +811,16 @@ function route() {
   const parts = hash.slice(2).split('/');
   window.scrollTo(0, 0);
   switch (parts[0]) {
-    case 'cesta': return pathScreen(parts[1]);
-    case 'lekce': return lessonScreen(parts[1]);
-    case 'procvic': return practiceScreen(parts[1]);
-    case 'plynulost': return fluencyScreen(parts[1]);
-    case 'nastaveni': return settingsScreen();
-    case 'sbirka': return collectionScreen(parts[1]);
-    default: return homeScreen();
+    case 'cesta': pathScreen(parts[1]); break;
+    case 'lekce': lessonScreen(parts[1]); break;
+    case 'procvic': practiceScreen(parts[1]); break;
+    case 'plynulost': fluencyScreen(parts[1]); break;
+    case 'nastaveni': settingsScreen(); break;
+    case 'sbirka': collectionScreen(parts[1]); break;
+    default: homeScreen();
   }
+  // odchod z obrazovky s pohárkem po první lekci (kamkoli) → nabídka přihlášení
+  if (offerAfterEnd) { offerAfterEnd = false; if (canOfferSync()) setTimeout(syncOffer, 300); }
 }
 window.addEventListener('hashchange', route);
 route();
@@ -822,8 +829,7 @@ route();
 sync.init().then(res => {
   if (res.error) toast(res.error === 'cancelled' ? 'Přihlášení zrušeno.' : 'Přihlášení se nepovedlo. Zkus to znovu v Nastavení.');
   else if (res.signedIn) { if (!inLesson()) route(); toast('Přihlášeno. Pokrok se teď synchronizuje.'); }
-  else if (sync.configured && !sync.isLoggedIn() && !sync.hasStoredLogin() && navigator.onLine
-    && store.get().seenWelcome && !store.get().syncNoAsk && !inLesson()) setTimeout(syncOffer, 500);
+  else if (canOfferSync() && !inLesson()) setTimeout(syncOffer, 500);
 });
 
 // exporty pro ladění v konzoli
