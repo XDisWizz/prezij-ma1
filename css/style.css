@@ -723,3 +723,24 @@ td.st-minus { color: #d85a30; font-weight: 800; }
 .pocket .lesson-top { gap: 8px; }
 .pocket .fb-note { margin: 8px 0 0; }
 .pocket .options-grid2 .opt-label { font-size: 21px; }
+
+/* ---------- Z hlavy: karty odemčené lekcí ---------- */
+.pk-unlock { max-width: 420px; margin: 4px auto 8px; padding: 14px 16px; text-align: left; border-radius: 20px;
+  background: linear-gradient(135deg, var(--surface), var(--violet-soft)); border: 2px solid color-mix(in srgb, var(--violet) 40%, var(--line)); box-shadow: 0 4px 0 color-mix(in srgb, var(--violet) 30%, var(--line));
+  animation: pk-unlock-in .55s cubic-bezier(.34, 1.56, .64, 1) .25s backwards; }
+@keyframes pk-unlock-in { from { opacity: 0; transform: translateY(14px) scale(.94); } }
+.pk-unlock-head { display: flex; align-items: center; gap: 12px; }
+.pk-unlock-head .pocket-icon { width: 46px; height: 46px; border-radius: 14px; }
+.pk-unlock-head .pocket-icon svg { width: 28px; height: 28px; }
+.pk-unlock-head > span:last-child { display: flex; flex-direction: column; line-height: 1.2; }
+.pk-unlock-head small { font-size: 11.5px; font-weight: 800; letter-spacing: .06em; color: var(--violet); }
+.pk-unlock-head b { font-size: 21px; font-weight: 900; }
+.pk-unlock ul { margin: 10px 0 8px; padding: 0; list-style: none; display: grid; gap: 5px; }
+.pk-unlock li { position: relative; padding-left: 18px; font-weight: 700; font-size: 15px; line-height: 1.3; }
+.pk-unlock li::before { content: ''; position: absolute; left: 3px; top: .5em; width: 7px; height: 7px; border-radius: 50%; background: var(--violet); }
+.pk-unlock p { margin: 0 0 10px; }
+.pk-plus { display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; font-size: 12.5px; font-weight: 800; color: var(--violet); }
+.pk-plus svg { width: 15px; height: 15px; flex: none; }
+.item-lk .pk-plus { opacity: .7; }
+@media (prefers-reduced-motion: reduce) { .pk-unlock { animation: none; } }
+.item .meta .pk-plus, .item .meta .pk-plus span { color: var(--violet); font-size: 12.5px; font-weight: 800; }

@@ -67,7 +67,11 @@ export function buildRound(skills, mem, now = Date.now(), n = 12) {
   if (!order.length) return [];
   const want = Math.min(order.length, n, Math.max(due.length + Math.min(fresh.length, NEW), 6));
   const chosen = order.slice(0, want);
-  const total = Math.min(n, chosen.length * 3);
+  return interleave(chosen, Math.min(n, chosen.length * 3));
+}
+
+/** rozdá `total` karet mezi vybrané dovednosti tak, aby stejná nešla dvakrát za sebou */
+function interleave(chosen, total) {
   const out = [];
   while (out.length < total) {
     let pass = shuffle(chosen);
@@ -75,6 +79,11 @@ export function buildRound(skills, mem, now = Date.now(), n = 12) {
     for (const s of pass) { if (out.length < total) out.push(s); }
   }
   return out;
+}
+
+/** Kolo jen z daných dovedností (karty čerstvě odemčené lekcí): každá třikrát, nejvýš `n` karet. */
+export function focusRound(skills, n = 12) {
+  return skills.length ? interleave(skills, Math.min(n, skills.length * 3)) : [];
 }
 
 // ------------------------------------------------------------ pomocníci pro karty

@@ -21,7 +21,7 @@ import { DECK as DECK2 } from './derivace/hlava.js';
 import { DECK as DECK3 } from './limity/hlava.js';
 import { DECK as DECK4 } from './prubeh/hlava.js';
 import { DECK as DECK5 } from './integraly/hlava.js';
-import { buildRound, memoryOf, dueCount, dueInDays, TOP } from './zhlavy.js';
+import { buildRound, focusRound, memoryOf, isDue, dueInDays, TOP } from './zhlavy.js';
 import * as hx from './haptics.js';
 const { haptic, hapticSeq, hapticStop, streakFx, sparkle, ramp } = hx;
 
@@ -341,8 +341,8 @@ function pathScreen(id) {
       h('span', { class: 'muted small' }, `z ${c.total} pohárků`)); })(),
     (() => { const pi = pocketInfo(p.id); return h('div', { class: 'hero-actions' },
       h('button', { class: 'btn btn-ghost btn-small', onclick: () => go('#/procvic/' + p.id), html: ICONS.dumbbell + '<span>Procvičit slabá místa</span>' }),
-      h('button', { class: 'btn btn-ghost btn-small', onclick: () => openPocket(p.id), html: ICONS.swipe + `<span>Z hlavy${pi.skills.length ? (pi.due ? ` · ${pi.due} k osvěžení` : ' · osvěženo') : ''}</span>` }),
-      pi.memory != null ? h('span', { class: 'muted small hero-mem' }, `Paměť ${pi.memory} %`) : null); })()));
+      h('button', { class: 'btn btn-ghost btn-small', onclick: () => openPocket(p.id), html: ICONS.swipe + `<span>Z hlavy${pi.skills.length ? ' · ' + (pi.fresh || pi.due ? pocketSub(pi) : 'osvěženo') : ''}</span>` }),
+      h('span', { class: 'muted small hero-mem' }, `${pi.memory != null ? `Paměť ${pi.memory} % · ` : 'Z hlavy: '}odemčeno ${pi.skills.length} z ${pi.total} karet`)); })()));
 
   let current = null;
   const firstOpen = all.findIndex((l, i) => !store.isDone(l.id) && unlocked(all, i));
@@ -365,12 +365,15 @@ function pathScreen(id) {
         ? `${TIER_LABEL[tier]} · ${rec?.mist != null ? (rec.mist ? `nejlépe ${chyb(rec.mist)}` : 'bez chyby') : `${Math.round((rec?.acc ?? 1) * 100)} % napoprvé`}${l.drill && rec?.lastAvg ? ` · ${fmtTime(rec.lastAvg)}/příklad` : ''}`
         : `≈ ${est.min} min · ${est.ex} ${est.ex === 1 ? 'úloha' : est.ex < 5 ? 'úlohy' : 'úloh'}`;
       const tag = l.drill ? h('span', { class: 'tag tag-drill' }, 'DRIL') : l.boss ? h('span', { class: 'tag tag-boss' }, 'SÉRIE') : null;
+      // co lekce přinese do režimu Z hlavy (jen u lekcí, které ještě nejsou hotové)
+      const plus = isDone || store.get().unlockAll ? 0 : unlockedBy(p, l.id).length;
       const item = h('button', {
         class: `item item-${st}${l.boss ? ' item-boss' : ''}${isDone ? ' tier-' + tier : ''}`, type: 'button',
         onclick: () => (open ? go('#/lekce/' + l.id) : (haptic('nope'), toast('Tahle lekce se odemkne po té předchozí.'))),
       },
         h('span', { class: 'tile', html: icon }),
-        h('span', { class: 'meta' }, h('b', {}, l.title), h('span', {}, meta)),
+        h('span', { class: 'meta' }, h('b', {}, l.title), h('span', {}, meta),
+          plus ? h('span', { class: 'pk-plus', title: 'Po dokončení se odemknou karty pro režim Z hlavy', html: ICONS.swipe + `<span>+${plus} ${cardWord(plus)} z hlavy</span>` }) : null),
         isCur ? h('span', { class: 'go' }, isDone ? 'Znovu' : 'Začít') : tag);
       if (isCur) current = item;
       tl.append(item);
@@ -655,6 +658,18 @@ function lessonScreen(id) {
             : `Minule ${fmtTime(was)} na příklad. Rychlost přijde sama, hlavně ať to sedí.`)
             : h('p', { class: 'tempo muted' }, 'Až dril zopakuješ, uvidíš tady, jak zrychluješ.'));
       }
+      // lekce dokončená poprvé odemkne karty Z hlavy, které z ní vycházejí (při „Odemknout všechny lekce“ už odemčené jsou)
+      const gained = !prev && !store.get().unlockAll ? unlockedBy(path, id) : [];
+      if (gained.length) {
+        const drillBox = extra;
+        extra = h('div', { class: 'pk-unlock' },
+          h('div', { class: 'pk-unlock-head' }, h('span', { class: 'pocket-icon', html: ICONS.swipe }),
+            h('span', {}, h('small', {}, 'Z HLAVY · ODEMČENO'), h('b', {}, '+' + newCards(gained.length)))),
+          h('ul', {}, gained.map(s => h('li', {}, s.title))),
+          h('p', { class: 'muted small' }, `Tuhle látku si teď můžeš opakovat i bez papíru. ${gained.length === 1 ? 'Karta se sama zařadí' : 'Karty se samy zařadí'} do dalšího kola.`),
+          h('button', { class: 'btn btn-ghost btn-small', type: 'button', onclick: () => go(`#/zhlavy/${path.id}/${id}`), html: ICONS.swipe + '<span>Vyzkoušet hned</span>' }));
+        if (drillBox) extra = h('div', {}, drillBox, extra);
+      }
       endScreen({ title: lesson.drill ? 'Dril hotový!' : 'Lekce hotová!', sub: lesson.title, acc, time, exercises, mistakes, res, back, again: '#/lekce/' + id, nextId: all[index + 1]?.id, extra, trophy });
     },
   });
@@ -925,19 +940,34 @@ function pocketSkills(scope) {
   return PATHS.filter(p => scope === 'mix' || p.id === scope)
     .flatMap(p => p.deck.map(s => ({ ...s, key: `${p.id}/${s.id}`, pid: p.id }))).filter(skillOpen);
 }
+/** fresh = odemčené karty, které ještě nikdy nepřišly na řadu; due = už viděné, kterým vypršel termín; total = všechny karty v balíčku */
 function pocketInfo(scope) {
   const skills = pocketSkills(scope), mem = store.get().mem || {};
+  const total = PATHS.filter(p => scope === 'mix' || p.id === scope).reduce((n, p) => n + p.deck.length, 0);
   // paměť se ukazuje, až když je co měřit (nula u někoho, kdo režim ještě nezkusil, by jen odrazovala)
-  return { skills, due: dueCount(skills, mem), memory: skills.some(s => mem[s.key]) ? memoryOf(skills, mem) : null };
+  return {
+    skills, total, fresh: skills.filter(s => !mem[s.key]).length, due: skills.filter(s => mem[s.key] && isDue(mem[s.key])).length,
+    memory: skills.some(s => mem[s.key]) ? memoryOf(skills, mem) : null,
+  };
 }
-const skillWord = n => (n === 1 ? 'dovednost' : n >= 2 && n <= 4 ? 'dovednosti' : 'dovedností');
-const pocketSub = pi => (!pi.skills.length ? 'odemkne se po první lekci' : pi.due ? `${pi.due} ${skillWord(pi.due)} k osvěžení` : 'dnes je osvěženo vše');
+// „Karta“ = jeden druh rozhodnutí (v kódu skill / dovednost); čísla v ní jsou pokaždé jiná.
+const cardWord = n => (n === 1 ? 'karta' : n >= 2 && n <= 4 ? 'karty' : 'karet');
+const newCards = n => (n === 1 ? '1 nová karta' : n >= 2 && n <= 4 ? `${n} nové karty` : `${n} nových karet`);
+function pocketSub(pi) {
+  if (!pi.skills.length) return 'odemkne se po první lekci';
+  if (pi.fresh && pi.due) return `${newCards(pi.fresh)}, ${pi.due} k osvěžení`;
+  if (pi.fresh) return newCards(pi.fresh);
+  return pi.due ? `${pi.due} ${cardWord(pi.due)} k osvěžení` : 'dnes je osvěženo vše';
+}
+/** karty, které odemkne dokončení dané lekce */
+const unlockedBy = (path, lessonId) => path.deck.filter(s => s.after === lessonId);
 function openPocket(scope) {
   if (!pocketSkills(scope).length) { haptic('nope'); return toast('Režim Z hlavy se odemkne po první dokončené lekci.'); }
   go('#/zhlavy/' + scope);
 }
 
-function pocketScreen(scope) {
+/** lessonId = kolo jen z karet, které odemkla tahle lekce (tlačítko „Vyzkoušet hned“ na konci lekce) */
+function pocketScreen(scope, lessonId) {
   const path = PATHS.find(p => p.id === scope);
   if (scope !== 'mix' && !path) return go('#/');
   const back = scope === 'mix' ? '#/' : '#/cesta/' + scope;
@@ -946,7 +976,8 @@ function pocketScreen(scope) {
   const manual = !!store.get().pocketManual;
   const before = { ...(store.get().mem || {}) };
   const memBefore = memoryOf(skills, before);
-  const queue = buildRound(skills, before).map(s => ({ s, tries: 0 }));
+  const focus = lessonId ? skills.filter(s => s.after === lessonId) : [];
+  const queue = (focus.length ? focusRound(focus) : buildRound(skills, before)).map(s => ({ s, tries: 0 }));
   const planned = queue.length;
   let idx = 0, row = 0, bestRow = 0, firstOk = 0, mistakes = 0, phase = 'answer', cur = null, card = null, cardT0 = 0, timer = null;
   const t0 = performance.now();
@@ -995,7 +1026,7 @@ function pocketScreen(scope) {
     const fresh = !before[it.s.key] && !shown.has(it.s.key);
     shown.add(it.s.key);
     cur.el.prepend(h('div', { class: 'pk-chip' }, h('span', {}, scope === 'mix' ? `${PATHS.find(p => p.id === it.s.pid).short} · ${it.s.title}` : it.s.title),
-      it.tries ? h('b', { class: 'rep' }, 'znovu po chybě') : fresh ? h('b', {}, 'nové') : null));
+      it.tries ? h('b', { class: 'rep' }, 'znovu po chybě') : fresh ? h('b', {}, 'nová karta') : null));
     stage.replaceChildren(cur.el);
     fitMath(cur.el);
     window.scrollTo(0, 0);
@@ -1083,8 +1114,9 @@ function pocketScreen(scope) {
         h('span', { class: 'muted small' }, scope === 'mix' ? 'Paměť (všechny cesty)' : 'Paměť cesty'),
         h('b', {}, memAfter === memBefore ? `${memAfter} %` : `${memBefore} % → ${memAfter} %`),
         h('div', { class: 'bar thin' }, h('div', { class: 'bar-fill', style: `width:${memAfter}%` }))),
-      h('div', { class: 'pk-list' }, h('div', { class: 'pk-row pk-head muted small' }, h('span', { class: 'pk-name' }, 'Dovednost'), h('span', {}, 'Stupeň'), h('span', { class: 'pk-when' }, 'Znovu')), rows),
-      h('p', { class: 'muted small' }, 'Co umíš, vrací se po čím dál delší době: za 1, 3, 7, 16 a 35 dní. Chyba dovednost posune zpátky a vrátí ji už zítra.'));
+      h('div', { class: 'pk-list' }, h('div', { class: 'pk-row pk-head muted small' }, h('span', { class: 'pk-name' }, 'Karta'), h('span', {}, 'Stupeň'), h('span', { class: 'pk-when' }, 'Znovu')), rows),
+      h('p', { class: 'muted small' }, 'Co umíš, vrací se po čím dál delší době: za 1, 3, 7, 16 a 35 dní. Chyba kartu posune zpátky a vrátí ji už zítra.'),
+      (() => { const pi = pocketInfo(scope); return pi.skills.length < pi.total ? h('p', { class: 'muted small' }, `Odemčeno máš ${pi.skills.length} z ${pi.total} karet. Další přibudou s každou novou lekcí.`) : null; })());
     endScreen({
       title: 'Kolo hotové', sub: scope === 'mix' ? 'Z hlavy · všechny cesty' : 'Z hlavy · ' + path.title, acc, time, exercises: planned, mistakes, res, back,
       backLabel: scope === 'mix' ? 'Domů' : 'Zpět na cestu', again: '#/zhlavy/' + scope, againLabel: 'Další kolo', againFirst: true, extra,
@@ -1246,7 +1278,7 @@ function route() {
     case 'lekce': lessonScreen(parts[1]); break;
     case 'procvic': practiceScreen(parts[1]); break;
     case 'plynulost': fluencyScreen(parts[1]); break;
-    case 'zhlavy': pocketScreen(parts[1]); break;
+    case 'zhlavy': pocketScreen(parts[1], parts[2]); break;
     case 'nastaveni': settingsScreen(); break;
     case 'sbirka': collectionScreen(parts[1]); break;
     default: homeScreen();
