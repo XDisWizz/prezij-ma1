@@ -608,3 +608,30 @@ td.st-minus { color: #d85a30; font-weight: 800; }
 .desktop-hint > div { flex: 1; }
 .desktop-hint .icon-btn { color: inherit; padding: .2em; }
 .desktop-hint svg { width: 1.4em; height: 1.4em; }
+
+/* ---------- zlatý pohárek: tanec ---------- */
+.gold-hero { position: relative; display: flex; align-items: flex-end; justify-content: center; gap: 4px; height: 240px; width: 100%; max-width: 360px; margin: 0 auto 6px; }
+.gold-glow { position: absolute; inset: 0 0 -6px; background: radial-gradient(ellipse 55% 62% at 50% 70%, rgba(255, 214, 102, .5), rgba(255, 214, 102, 0) 70%); pointer-events: none; }
+.gold-cup { position: relative; margin-bottom: 6px; filter: drop-shadow(0 10px 16px rgba(0, 0, 0, .25)); }
+.gold-cup svg { display: block; }
+.gold-slot { position: relative; width: 153px; height: 228px; }
+/* bez will-change: prohlížeč pak při přeletu kreslí obrázek v plném rozlišení, ne rozmazaně zvětšený */
+.gold-fig { display: block; height: 100%; width: auto; margin: 0 auto; user-select: none; -webkit-user-select: none; pointer-events: none; }
+.gold-fig.flying { position: relative; z-index: 71; }
+.gold-ring { position: absolute; left: 50%; top: 50%; width: 220px; height: 220px; margin: -110px 0 0 -110px; border-radius: 50%; border: 3px solid #ffd257; box-shadow: 0 0 24px rgba(255, 210, 87, .6); opacity: 0; pointer-events: none; }
+.gold-shelf { position: absolute; left: 24px; right: 24px; bottom: 0; height: 5px; border-radius: 5px; background: linear-gradient(90deg, transparent, #f5b800 20%, #ffe066 50%, #f5b800 80%, transparent); }
+.gold-lock, .gold-lock body { overflow: hidden; }
+
+.gold-over { position: fixed; inset: 0; z-index: 70; overflow: hidden; cursor: pointer; display: flex; flex-direction: column; align-items: center; -webkit-tap-highlight-color: transparent; }
+.gold-bg { position: absolute; left: 50%; top: 50%; width: 150vmax; height: 150vmax; margin: -75vmax 0 0 -75vmax; border-radius: 50%; overflow: hidden; background: radial-gradient(circle at 50% 54%, #4a3509 0, #1d1507 30%, #0e0b05 62%); will-change: transform, opacity; }
+.gold-rays { position: absolute; inset: 0; background: repeating-conic-gradient(from 0deg at 50% 54%, rgba(255, 214, 102, .15) 0 9deg, rgba(255, 214, 102, 0) 9deg 22deg); -webkit-mask-image: radial-gradient(circle at 50% 54%, #000 8%, transparent 45%); mask-image: radial-gradient(circle at 50% 54%, #000 8%, transparent 45%); animation: goldSpin 24s linear infinite; }
+@keyframes goldSpin { to { transform: rotate(360deg); } }
+.gold-conf { position: absolute; inset: 0; pointer-events: none; }
+.gold-conf span { position: absolute; top: -40px; left: var(--x); color: var(--c); font: 700 var(--s)/1 'Cambria Math', 'STIX Two Math', serif; animation: goldFall var(--d) var(--w) linear infinite; will-change: transform; }
+@keyframes goldFall { to { transform: translateY(calc(100vh + 80px)) rotate(var(--r)); } }
+.gold-title { position: relative; margin-top: max(48px, 9vh); font-size: clamp(54px, 17vw, 84px); font-weight: 900; letter-spacing: .1em; line-height: 1; background: linear-gradient(#fffbe0, #ffe066 35%, #f5b800 62%, #c98a00); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 3px 0 #5a3a00) drop-shadow(0 0 22px rgba(255, 190, 40, .35)); }
+.gold-sub { position: relative; margin-top: 10px; color: #fac775; font-weight: 800; font-size: 17px; }
+.gold-stage { position: absolute; left: 0; right: 0; bottom: max(64px, 9vh); display: flex; justify-content: center; }
+.gold-stage .gold-fig { height: min(56vh, 470px); position: relative; z-index: 1; }
+.gold-spot { position: absolute; left: 50%; bottom: -30px; width: min(90vw, 380px); height: min(64vh, 520px); transform: translateX(-50%); background: radial-gradient(ellipse 50% 55% at 50% 55%, rgba(255, 240, 200, .36), rgba(255, 240, 200, 0) 70%); pointer-events: none; }
+.gold-tap { position: absolute; bottom: calc(18px + env(safe-area-inset-bottom)); color: #c9b27a; font-size: 13px; font-weight: 700; }
