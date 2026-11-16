@@ -580,10 +580,10 @@ export function canPlug(t = pick(['frac', 'sqrt', 'ln'])) {
     calc = `$f(${x}) = \\frac{1}{${sub(x, a)}}${a === 0 ? '' : ` = \\frac{1}{${x - a}}`}${x - a === 1 ? ' = 1' : ''}$` + (ok ? '. To jde.' : '. Dělení nulou nejde.');
   } else if (t === 'sqrt') {
     x = ri(a - 4, a + 4); ok = x >= a; f = `\\sqrt{${sh(a)}}`;
-    calc = `$f(${x}) = \\sqrt{${sub(x, a)}} = \\sqrt{${x - a}}$` + (ok ? '. To jde.' : '. Odmocnina ze záporného čísla nejde.');
+    calc = `$f(${x}) = \\sqrt{${sub(x, a)}}${a === 0 ? '' : ` = \\sqrt{${x - a}}`}$` + (ok ? '. To jde.' : '. Odmocnina ze záporného čísla nejde.');
   } else {
     x = ri(a - 3, a + 3); ok = x > a; f = `\\ln(${sh(a)})`;
-    calc = `$f(${x}) = \\ln(${sub(x, a)}) = \\ln(${x - a})$` + (ok ? '. To jde.' : '. Logaritmus umí jen kladná čísla.');
+    calc = `$f(${x}) = \\ln(${sub(x, a)})${a === 0 ? '' : ` = \\ln(${x - a})`}$` + (ok ? '. To jde.' : '. Logaritmus umí jen kladná čísla.');
   }
   return {
     type: 'choice', key: 'canPlug', prompt: `Smím do funkce dosadit $x = ${x}$?`, context: `f(x) = ${f}`,

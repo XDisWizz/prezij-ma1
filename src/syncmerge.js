@@ -9,6 +9,7 @@ import { tierFromAcc } from './trophy.js';
 const FLUENCY_PER_PATH = 10;   // posledních 10 pokusů na cestu + vždy ten nejlepší
 const MAX_LESSONS = 2000;
 const MAX_WEAK = 500;
+const MAX_MEM = 600;
 const ID = /^[\w.:\/-]{1,80}$/;
 
 const num = (x, lo = 0, hi = 1e12) => (typeof x === 'number' && Number.isFinite(x) && x >= lo && x <= hi ? x : undefined);
@@ -26,7 +27,27 @@ export function syncSubset(s) {
     weak: s.weak,
     weakAt: s.weakAt || 0,
     fluency: trimFluency(s.fluency || []),
+    mem: s.mem || {},
   };
+}
+
+/** režim Z hlavy: jen záznamy správného tvaru */
+function cleanMem(raw) {
+  const out = {};
+  if (!isObj(raw)) return out;
+  for (const [k, v] of Object.entries(raw).slice(0, MAX_MEM)) {
+    if (!ID.test(k) || !isObj(v)) continue;
+    const b = num(v.b, 0, 5), due = num(v.due), at = num(v.at);
+    if (b === undefined || due === undefined || at === undefined) continue;
+    out[k] = { b: Math.floor(b), due, at };
+  }
+  return out;
+}
+/** u každé dovednosti vyhrává novější záznam (ten, na kterém se naposledy odpovídalo) */
+function mergeMem(a, b) {
+  const out = { ...a };
+  for (const [k, r] of Object.entries(b)) if (!out[k] || r.at > out[k].at) out[k] = r;
+  return out;
 }
 
 /** Data ze serveru se berou jako nedůvěryhodná: zahodí se všechno, co nemá očekávaný tvar. */
@@ -41,6 +62,7 @@ export function sanitize(raw) {
     weak: {},
     weakAt: num(r.weakAt) ?? 0,
     fluency: [],
+    mem: cleanMem(r.mem),
   };
   if (isObj(r.streak)) {
     out.streak.count = Math.floor(num(r.streak.count, 0, 1e5) ?? 0);
@@ -164,6 +186,7 @@ export function merge(local, remote) {
     weak: { ...(weakNewer.weak || {}) },
     weakAt: weakNewer.weakAt || 0,
     fluency: trimFluency(fluency),
+    mem: mergeMem(cleanMem(l.mem), r.mem || {}),
   };
 }
 

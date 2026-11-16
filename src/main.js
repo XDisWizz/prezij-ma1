@@ -1,4 +1,4 @@
-import { h, m, pick, shuffle, PRAISE, SOFT, ICONS } from './ui.js';
+import { h, m, pick, shuffle, fitMath, PRAISE, SOFT, ICONS } from './ui.js';
 import { renderCard } from './cards.js';
 import { store } from './store.js';
 import * as sync from './sync.js';
@@ -16,14 +16,22 @@ import { GEN as PGEN } from './prubeh/gen.js';
 import { PATH as INTEGRALY } from './integraly/content.js';
 import { GEN as IGEN } from './integraly/gen.js';
 
+import { DECK as DECK1 } from './defobor/hlava.js';
+import { DECK as DECK2 } from './derivace/hlava.js';
+import { DECK as DECK3 } from './limity/hlava.js';
+import { DECK as DECK4 } from './prubeh/hlava.js';
+import { DECK as DECK5 } from './integraly/hlava.js';
+import { buildRound, memoryOf, dueCount, dueInDays, TOP } from './zhlavy.js';
+
 const GEN = { ...GEN0, ...GONIO_GEN };
 
+// deck = balíček karet pro režim Z hlavy (src/<cesta>/hlava.js)
 const PATHS = [
-  { id: 'defobor', title: 'Definiční obory', tagline: 'Kam smíš dosadit a kam ne', content: DEFOBOR, gen: GEN },
-  { id: 'derivace', title: 'Derivace', tagline: 'Od tabulky po složené funkce', content: DERIVACE, gen: DGEN },
-  { id: 'limity', title: 'Limity posloupností a funkcí', tagline: 'Kam to celé míří', content: LIMITY, gen: LGEN },
-  { id: 'prubeh', title: 'Průběh funkce + Taylor', tagline: 'Z rovnice obrázek', content: PRUBEH, gen: PGEN },
-  { id: 'integraly', title: 'Neurčité integrály', tagline: 'Derivace pozpátku', content: INTEGRALY, gen: IGEN },
+  { id: 'defobor', short: 'Definiční obory', title: 'Definiční obory', tagline: 'Kam smíš dosadit a kam ne', content: DEFOBOR, gen: GEN, deck: DECK1 },
+  { id: 'derivace', short: 'Derivace', title: 'Derivace', tagline: 'Od tabulky po složené funkce', content: DERIVACE, gen: DGEN, deck: DECK2 },
+  { id: 'limity', short: 'Limity', title: 'Limity posloupností a funkcí', tagline: 'Kam to celé míří', content: LIMITY, gen: LGEN, deck: DECK3 },
+  { id: 'prubeh', short: 'Průběh funkce', title: 'Průběh funkce + Taylor', tagline: 'Z rovnice obrázek', content: PRUBEH, gen: PGEN, deck: DECK4 },
+  { id: 'integraly', short: 'Integrály', title: 'Neurčité integrály', tagline: 'Derivace pozpátku', content: INTEGRALY, gen: IGEN, deck: DECK5 },
 ];
 
 const app = document.getElementById('app');
@@ -204,7 +212,7 @@ sync.onStatus(st => {
   const old = document.querySelector('.sync-block');
   if (old) { const fresh = syncBlock(); if (fresh) old.replaceWith(fresh); }
 });
-const inLesson = () => /^#\/(lekce|procvic|plynulost)\//.test(location.hash);
+const inLesson = () => /^#\/(lekce|procvic|plynulost|zhlavy)\//.test(location.hash);
 // přišel pokrok z jiného zařízení → překreslit (ale nikdy uprostřed lekce)
 sync.onData(() => { if (!inLesson() && !document.querySelector('.modal-back')) route(); });
 
@@ -282,6 +290,11 @@ function homeScreen() {
     }
   });
   main.append(grid);
+  const pi = pocketInfo('mix');
+  main.append(h('button', { class: 'coll-card pocket-card', onclick: () => openPocket('mix') },
+    h('span', { class: 'pocket-icon', html: ICONS.swipe }),
+    h('span', { class: 'path-text' }, h('b', {}, 'Z hlavy'), h('span', { class: 'muted' }, pi.skills.length ? pocketSub(pi).replace(/^./, c => c.toUpperCase()) : 'Bez papíru, jen ťukáním. Odemkne se po první lekci.')),
+    pi.memory != null ? h('span', { class: 'mem-pill', title: 'Jak dobře teď látka drží v paměti' }, h('small', {}, 'Paměť'), h('b', {}, pi.memory + ' %')) : null));
   const tc = trophyCounts();
   main.append(h('button', { class: 'coll-card', onclick: () => go('#/sbirka') },
     h('span', { class: 'coll-card-icon', html: trophySvg(3, 56) }),
@@ -322,7 +335,10 @@ function pathScreen(id) {
     (() => { const c = countTiers(pathTrophies(p)); return h('button', { class: 'hero-trophies', onclick: () => go('#/sbirka/' + p.id) },
       h('span', { html: trophySvg(3, 26) + `<b>${c.gold}</b>` }), h('span', { html: trophySvg(2, 26) + `<b>${c.silver}</b>` }), h('span', { html: trophySvg(1, 26) + `<b>${c.bronze}</b>` }),
       h('span', { class: 'muted small' }, `z ${c.total} pohárků`)); })(),
-    h('button', { class: 'btn btn-ghost btn-small', onclick: () => go('#/procvic/' + p.id), html: ICONS.dumbbell + '<span>Procvičit slabá místa</span>' })));
+    (() => { const pi = pocketInfo(p.id); return h('div', { class: 'hero-actions' },
+      h('button', { class: 'btn btn-ghost btn-small', onclick: () => go('#/procvic/' + p.id), html: ICONS.dumbbell + '<span>Procvičit slabá místa</span>' }),
+      h('button', { class: 'btn btn-ghost btn-small', onclick: () => openPocket(p.id), html: ICONS.swipe + `<span>Z hlavy${pi.skills.length ? (pi.due ? ` · ${pi.due} k osvěžení` : ' · osvěženo') : ''}</span>` }),
+      pi.memory != null ? h('span', { class: 'muted small hero-mem' }, `Paměť ${pi.memory} %`) : null); })()));
 
   let current = null;
   const firstOpen = all.findIndex((l, i) => !store.isDone(l.id) && unlocked(all, i));
@@ -629,9 +645,9 @@ function lessonScreen(id) {
   });
 }
 
-function endScreen({ title, sub, acc, time, exercises, mistakes = 0, res, back, again, nextId, extra, trophy }) {
+function endScreen({ title, sub, acc, time, exercises, mistakes = 0, res, back, again, nextId, extra, trophy, backLabel = 'Zpět na cestu', againLabel = 'Zopakovat', againFirst = false, note }) {
   const pct = Math.round(acc * 100);
-  const msg = !exercises ? 'Teorie je v hlavě. Příště už počítáme.'
+  const msg = note ? note : !exercises ? 'Teorie je v hlavě. Příště už počítáme.'
     : !mistakes ? 'Bez jediné chyby. Tohle už máš v ruce.'
     : pct >= 90 ? 'Šlape ti to! Tohle už máš v ruce.'
       : pct >= 60 ? 'Dobrá práce. Chyby jsou přesně to, z čeho se mozek učí nejvíc.'
@@ -664,8 +680,12 @@ function endScreen({ title, sub, acc, time, exercises, mistakes = 0, res, back, 
     h('p', { class: 'end-msg' }, msg),
     h('div', { class: 'end-actions' },
       nextId ? h('button', { class: 'btn btn-primary', onclick: () => go('#/lekce/' + nextId) }, 'Další lekce') : null,
-      h('button', { class: nextId ? 'btn btn-ghost' : 'btn btn-primary', onclick: () => go(back) }, 'Zpět na cestu'),
-      again ? h('button', { class: 'btn btn-ghost', onclick: () => { if (location.hash === again) route(); else go(again); } }, 'Zopakovat') : null));
+      ...(() => {
+        const first = again && againFirst;
+        const backBtn = h('button', { class: nextId || first ? 'btn btn-ghost' : 'btn btn-primary', onclick: () => go(back) }, backLabel);
+        const againBtn = again ? h('button', { class: first ? 'btn btn-primary' : 'btn btn-ghost', onclick: () => { if (location.hash === again) route(); else go(again); } }, againLabel) : null;
+        return first ? [againBtn, backBtn] : [backBtn, againBtn];
+      })()));
   app.replaceChildren(main);
   window.scrollTo(0, 0);
   if (gold?.intro) goldIntro(main, tBox, gold);
@@ -864,6 +884,200 @@ function fluencyScreen(pathId) {
   });
 }
 
+// ------------------------------------------------------------ režim Z hlavy
+// Krátké kolo jen na ťukání a švih (bez papíru). Karty jsou v src/<cesta>/hlava.js, plánování v src/zhlavy.js.
+// Každá odpověď se hned započítá do termínu opakování, takže kolo jde kdykoli opustit beze ztráty.
+const skillOpen = s => store.get().unlockAll || store.isDone(s.after);
+/** odemčené dovednosti jedné cesty, nebo všech cest (scope 'mix') */
+function pocketSkills(scope) {
+  return PATHS.filter(p => scope === 'mix' || p.id === scope)
+    .flatMap(p => p.deck.map(s => ({ ...s, key: `${p.id}/${s.id}`, pid: p.id }))).filter(skillOpen);
+}
+function pocketInfo(scope) {
+  const skills = pocketSkills(scope), mem = store.get().mem || {};
+  // paměť se ukazuje, až když je co měřit (nula u někoho, kdo režim ještě nezkusil, by jen odrazovala)
+  return { skills, due: dueCount(skills, mem), memory: skills.some(s => mem[s.key]) ? memoryOf(skills, mem) : null };
+}
+const skillWord = n => (n === 1 ? 'dovednost' : n >= 2 && n <= 4 ? 'dovednosti' : 'dovedností');
+const pocketSub = pi => (!pi.skills.length ? 'odemkne se po první lekci' : pi.due ? `${pi.due} ${skillWord(pi.due)} k osvěžení` : 'dnes je osvěženo vše');
+function openPocket(scope) {
+  if (!pocketSkills(scope).length) return toast('Režim Z hlavy se odemkne po první dokončené lekci.');
+  go('#/zhlavy/' + scope);
+}
+const buzz = ok => { if (navigator.vibrate && coarsePointer()) try { navigator.vibrate(ok ? 12 : [18, 50, 18]); } catch { /* nevadí */ } };
+const coarsePointer = () => window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+
+function pocketScreen(scope) {
+  const path = PATHS.find(p => p.id === scope);
+  if (scope !== 'mix' && !path) return go('#/');
+  const back = scope === 'mix' ? '#/' : '#/cesta/' + scope;
+  const skills = pocketSkills(scope);
+  if (!skills.length) return go(back);
+  const manual = !!store.get().pocketManual;
+  const before = { ...(store.get().mem || {}) };
+  const memBefore = memoryOf(skills, before);
+  const queue = buildRound(skills, before).map(s => ({ s, tries: 0 }));
+  const planned = queue.length;
+  let idx = 0, row = 0, bestRow = 0, firstOk = 0, mistakes = 0, phase = 'answer', cur = null, card = null, cardT0 = 0, timer = null;
+  const t0 = performance.now();
+  const touched = new Map();   // dovednosti, na které v kole došlo (pro shrnutí)
+  const shown = new Set();
+
+  const bar = h('div', { class: 'bar-fill' });
+  const rowPill = h('span', { class: 'row-pill' });
+  const stage = h('div', { class: 'stage' });
+  const foot = h('footer', { class: 'lesson-foot' });
+  const screen = h('div', { class: 'lesson pocket' },
+    h('div', { class: 'lesson-top' }, h('button', { class: 'icon-btn', 'aria-label': 'Ukončit kolo', html: ICONS.close, onclick: () => askClose() }), h('div', { class: 'bar lesson-bar' }, bar), rowPill,
+      h('button', { class: 'cheat-btn', type: 'button', title: 'Tahák: vzorce a pravidla', 'aria-label': 'Otevřít tahák', onclick: () => openCheat(), html: ICONS.book + '<span>Tahák</span>' })),
+    stage, foot);
+  // tahák je k ruce i tady (kdo si není jistý, ať se radši podívá, než aby hádal); odpověď s tahákem ale stupeň neposune
+  let peeked = false;
+  const sheets = {};
+  function openCheat() {
+    const p = PATHS.find(x => x.id === queue[Math.min(idx, queue.length - 1)].s.pid);
+    if (phase === 'answer') peeked = true;
+    openSheet('Tahák · ' + p.short, p.content.cheat, (sheets[p.id] ||= { open: [0], scroll: 0 }));
+  }
+  const setRow = () => { rowPill.innerHTML = ICONS.bolt + `<b>${row}</b><span>v řadě</span>`; rowPill.classList.toggle('hot', row >= 3); };
+  setRow();
+  app.replaceChildren(screen);
+
+  function askClose() {
+    if (idx === 0 && phase === 'answer') return go(back);
+    modal('Skončit kolo?', 'Odpovědi z tohohle kola už jsou započítané, o nic nepřijdeš.', [
+      { label: 'Pokračovat', primary: true },
+      { label: 'Skončit', fn: () => go(back) },
+    ]);
+  }
+
+  function show() {
+    clearTimeout(timer);
+    if (idx >= queue.length) return finish();
+    const it = queue[idx];
+    bar.style.width = `${100 * idx / queue.length}%`;
+    card = it.s.make();
+    (window.__ma1 ||= {}).card = card;
+    cur = renderCard(card, { instant: check });
+    phase = 'answer';
+    peeked = false;
+    cardT0 = performance.now();
+    const fresh = !before[it.s.key] && !shown.has(it.s.key);
+    shown.add(it.s.key);
+    cur.el.prepend(h('div', { class: 'pk-chip' }, h('span', {}, scope === 'mix' ? `${PATHS.find(p => p.id === it.s.pid).short} · ${it.s.title}` : it.s.title),
+      it.tries ? h('b', { class: 'rep' }, 'znovu po chybě') : fresh ? h('b', {}, 'nové') : null));
+    stage.replaceChildren(cur.el);
+    fitMath(cur.el);
+    window.scrollTo(0, 0);
+    cur.el.classList.add('enter');
+    foot.className = 'lesson-foot pk-foot';
+    foot.replaceChildren(h('div', { class: 'foot-row' },
+      h('button', { class: 'btn btn-ghost btn-small', onclick: dontKnow }, 'Nevím'),
+      h('span', { class: 'muted small' }, `${idx + 1} / ${queue.length}`)));
+  }
+
+  function check() {
+    if (phase !== 'answer') return;
+    const r = cur.check();
+    if (r.invalid) return;
+    settle(r.ok, r);
+  }
+  function dontKnow() {
+    if (phase !== 'answer') return;
+    settle(false, { ...cur.reveal(), dontKnow: true });
+  }
+
+  function settle(ok, r) {
+    phase = 'feedback';
+    const it = queue[idx], dt = (performance.now() - cardT0) / 1000;
+    // dovednost, která je nová nebo ještě nesedí, dostane vysvětlení i po správné odpovědi (poprvé v kole): správně se dá i uhodnout
+    const teach = it.tries === 0 && !touched.has(it.s.key) && (before[it.s.key]?.b ?? 0) < 2;
+    const helped = ok && peeked;
+    if (!helped) store.pocketAnswer(it.s.key, ok);
+    touched.set(it.s.key, it.s);
+    // chyba z hlavy se přičte ke slabým místům příkladu „na papír“, takže na ni zamíří i Procvičování
+    if (!ok && it.s.weak) store.record(`${it.s.pid}/${it.s.weak}`, false, dt);
+    if (ok && it.tries === 0) firstOk++;
+    if (!ok) {
+      mistakes++;
+      if (it.tries < 2) queue.splice(Math.min(queue.length, idx + 3), 0, { s: it.s, tries: it.tries + 1 });   // vrátí se za chvíli, s jinými čísly
+    }
+    row = ok ? row + 1 : 0;
+    bestRow = Math.max(bestRow, row);
+    setRow();
+    buzz(ok);
+    const title = r.dontKnow ? 'V pohodě, takhle to je:' : ok ? pick(PRAISE) : pick(SOFT);
+    const head = h('div', { class: 'fb-title', html: (ok ? ICONS.check : ICONS.bulb) + `<span>${title}</span>` });
+    foot.className = 'lesson-foot pk-foot fb ' + (ok ? 'fb-ok' : 'fb-soft');
+    if (ok && !manual && !teach && !helped) {
+      // správně u dovednosti, která už sedí: krátké potvrzení a další karta sama (jde vypnout v Nastavení)
+      foot.replaceChildren(h('div', { class: 'foot-row' }, head));
+      timer = setTimeout(next, 750);
+      return;
+    }
+    if (r.msg || helped) {
+      // u špatně zvolené možnosti: nejdřív proč ne tahle, pak jak je to správně
+      const more = !ok && card.explain && card.explain !== r.msg ? h('div', { class: 'fb-msg fb-more', html: m(card.explain) }) : null;
+      const note = helped ? h('p', { class: 'fb-note' }, 'S tahákem se stupeň neposouvá. Příště to zkus bez něj.') : null;
+      const detail = h('div', { class: 'fb-detail ' + (ok ? 'fb-ok' : 'fb-soft') }, r.msg ? h('div', { class: 'fb-msg', html: m(r.msg) }) : null, more, note);
+      stage.append(detail);
+      setTimeout(() => detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 80);
+    }
+    foot.replaceChildren(h('div', { class: 'foot-row' }, head, h('button', { class: 'btn btn-primary', onclick: next }, 'Pokračovat')));
+  }
+
+  function next() {
+    if (phase !== 'feedback') return;
+    clearTimeout(timer);
+    idx++;
+    show();
+  }
+
+  function finish() {
+    phase = 'done';
+    document.removeEventListener('keydown', onKey);
+    const time = (performance.now() - t0) / 1000;
+    const acc = planned ? firstOk / planned : 1;
+    const res = store.finishLesson('zhlavy-' + scope, { acc, time });
+    const mem = store.get().mem, memAfter = memoryOf(pocketSkills(scope), mem);
+    const rows = [...touched.values()].map(s => {
+      const now = mem[s.key], was = before[s.key]?.b ?? 0, d = dueInDays(now);
+      return h('div', { class: 'pk-row' + (now.b > was ? ' up' : now.b < was ? ' down' : '') },
+        h('span', { class: 'pk-name' }, s.title),
+        h('span', { class: 'pk-dots', title: `Stupeň ${now.b} z ${TOP}` }, Array.from({ length: TOP }, (_, i) => h('i', { class: i < now.b ? 'on' : null }))),
+        h('span', { class: 'pk-when muted small' }, d <= 0 ? 'dnes' : d === 1 ? 'zítra' : `za ${d} ${d < 5 ? 'dny' : 'dní'}`));
+    });
+    const extra = h('div', { class: 'pk-end' },
+      h('div', { class: 'pk-mem' },
+        h('span', { class: 'muted small' }, scope === 'mix' ? 'Paměť (všechny cesty)' : 'Paměť cesty'),
+        h('b', {}, memAfter === memBefore ? `${memAfter} %` : `${memBefore} % → ${memAfter} %`),
+        h('div', { class: 'bar thin' }, h('div', { class: 'bar-fill', style: `width:${memAfter}%` }))),
+      h('div', { class: 'pk-list' }, h('div', { class: 'pk-row pk-head muted small' }, h('span', { class: 'pk-name' }, 'Dovednost'), h('span', {}, 'Stupeň'), h('span', { class: 'pk-when' }, 'Znovu')), rows),
+      h('p', { class: 'muted small' }, 'Co umíš, vrací se po čím dál delší době: za 1, 3, 7, 16 a 35 dní. Chyba dovednost posune zpátky a vrátí ji už zítra.'));
+    endScreen({
+      title: 'Kolo hotové', sub: scope === 'mix' ? 'Z hlavy · všechny cesty' : 'Z hlavy · ' + path.title, acc, time, exercises: planned, mistakes, res, back,
+      backLabel: scope === 'mix' ? 'Domů' : 'Zpět na cestu', again: '#/zhlavy/' + scope, againLabel: 'Další kolo', againFirst: true, extra,
+      note: mistakes ? 'Na čem to drhlo, se vrátí zítra. A najdeš to i v Procvičování slabých míst.' : bestRow >= 6 ? `Bez chyby, ${bestRow} v řadě. Tohle už v hlavě drží.` : 'Bez chyby. Tohle už v hlavě drží.',
+    });
+  }
+
+  function onKey(e) {
+    const sheet = document.querySelector('.sheet-back');
+    if (sheet) { if (e.key === 'Escape') sheet.remove(); return; }   // otevřený tahák: klávesy nepatří kolu
+    if (document.querySelector('.modal-back')) return;
+    if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); if (phase === 'feedback') next(); return; }
+    if (e.key === 'Escape') return askClose();
+    if (phase === 'answer' && cur.key && /^([1-9]|ArrowLeft|ArrowRight)$/.test(e.key)) cur.key(e.key);
+  }
+  document.addEventListener('keydown', onKey);
+  cleanup = () => { document.removeEventListener('keydown', onKey); clearTimeout(timer); };
+  show();
+  if (!store.get().seenPocket) {
+    modal('Režim Z hlavy', 'Žádné psaní, jen rozhodnutí. Kartu se dvěma možnostmi <b>švihni</b> doleva nebo doprava (nebo ťukni na tlačítko), u ostatních ťukni na odpověď.<br><br>U nových věcí a po chybě uvidíš krátké vysvětlení. Když nevíš, dej <b>Nevím</b> nebo se podívej do taháku, hádat nemá cenu. Co umíš, vrátí se až za delší dobu.',
+      [{ label: 'Rozumím', primary: true, fn: () => store.set({ seenPocket: true }) }]);
+  }
+}
+
 // ------------------------------------------------------------ sbírka pohárků
 function collectionScreen(focus) {
   const paths = PATHS.filter(p => p.content);
@@ -958,6 +1172,9 @@ function settingsScreen() {
     h('label', { class: 'setting' },
       h('input', { type: 'checkbox', checked: st.unlockAll || null, onchange: e => store.set({ unlockAll: e.target.checked }) }),
       h('span', {}, h('b', {}, 'Odemknout všechny lekce'), h('span', { class: 'muted small' }, 'Pro ty, kdo už něco umí a chtějí přeskakovat.'))),
+    h('label', { class: 'setting' },
+      h('input', { type: 'checkbox', checked: st.pocketManual || null, onchange: e => store.set({ pocketManual: e.target.checked }) }),
+      h('span', {}, h('b', {}, 'Z hlavy: nepokračovat samo'), h('span', { class: 'muted small' }, 'Po správné odpovědi počká na tlačítko Pokračovat a ukáže vysvětlení.'))),
     h('div', { class: 'setting-block' },
       h('b', {}, sync.configured ? 'Záloha do souboru' : 'Přenést pokrok na jiné zařízení'),
       h('p', { class: 'muted small' }, sync.configured ? 'Bez účtu: stáhni si pokrok do souboru a na druhém zařízení ho nahraj.' : 'Pokrok se ukládá jen v tomhle prohlížeči. Stáhni si ho do souboru a na druhém zařízení ho nahraj.'),
@@ -988,6 +1205,7 @@ function route() {
     case 'lekce': lessonScreen(parts[1]); break;
     case 'procvic': practiceScreen(parts[1]); break;
     case 'plynulost': fluencyScreen(parts[1]); break;
+    case 'zhlavy': pocketScreen(parts[1]); break;
     case 'nastaveni': settingsScreen(); break;
     case 'sbirka': collectionScreen(parts[1]); break;
     default: homeScreen();

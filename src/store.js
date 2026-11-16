@@ -1,6 +1,7 @@
 // Pokrok studenta – ukládá se v prohlížeči (localStorage), volitelně se synchronizuje (src/sync.js).
 import { syncSubset } from './syncmerge.js';
 import { tierFromAcc } from './trophy.js';
+import { schedule } from './zhlavy.js';
 
 const KEY = 'ma1-progress-v1';
 
@@ -13,6 +14,7 @@ const blank = () => ({
   fluency: [],       // { d, time, correct, total }
   seenWelcome: false,
   unlockAll: false,
+  mem: {},           // režim Z hlavy: 'cesta/dovednost' -> { b: stupeň 0–5, due: kdy znovu, at: poslední změna }
   weakAt: 0,         // kdy se naposledy měnila slabá místa (pro slučování)
   epoch: 0,          // zvýší se při „Začít úplně od začátku“ (přebije starší pokrok na jiných zařízeních)
 });
@@ -77,6 +79,12 @@ export const store = {
     if (state.log.length > 1500) state.log = state.log.slice(-1500);
     save();
   },
+  /** režim Z hlavy: posune termín opakování dovednosti; vrací nový záznam, nebo null (beze změny) */
+  pocketAnswer(key, ok) {
+    const rec = schedule(state.mem[key], ok);
+    if (rec) { state.mem = { ...state.mem, [key]: rec }; save(); }
+    return rec;
+  },
   weakKeys() {
     return Object.entries(state.weak).sort((a, b) => b[1] - a[1]).map(([k]) => k);
   },
@@ -94,7 +102,7 @@ export const store = {
     save();
   },
   /** smaže pokrok; novější epocha zajistí, že ho synchronizace nevrátí z jiného zařízení */
-  reset() { const keep = { theme: state.theme }; state = { ...blank(), ...keep, epoch: Date.now() }; save(); },
+  reset() { const keep = { theme: state.theme, pocketManual: state.pocketManual }; state = { ...blank(), ...keep, epoch: Date.now() }; save(); },
   /** synchronizace: část stavu, která jde na server */
   syncData: () => syncSubset(state),
   /** synchronizace: přepíše synchronizované položky sloučenými daty (bez upozornění posluchačů) */

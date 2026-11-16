@@ -30,6 +30,14 @@ export function h(tag, attrs = {}, ...children) {
   return el;
 }
 
+/** Vzorec, který se nevejde na šířku (úzký mobil), se zmenší, aby byl vidět celý. Volat, až je karta v dokumentu. */
+export function fitMath(root) {
+  for (const box of root.querySelectorAll('.sw-show, .show-box')) {
+    const w = box.clientWidth, full = box.scrollWidth;
+    if (w && full > w + 1) box.style.fontSize = `${Math.round(100 * Math.max(0.62, 0.98 * w / full))}%`;
+  }
+}
+
 export const ri = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 export const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 export function shuffle(arr) {
@@ -52,6 +60,7 @@ export const ICONS = {
   dumbbell: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6M6 7v10M18 7v10M21 9v6M6 12h12" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>',
   flame: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c1 3.5 5 5.5 5 10a5 5 0 0 1-10 0c0-2.5 1.5-4 2.5-5 .3 1.5 1 2.5 2 3 .5-2.5-.5-5.5.5-8z" fill="currentColor"/></svg>',
   repeat: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 11a7.5 7.5 0 0 1 13-4.6M19.5 13a7.5 7.5 0 0 1-13 4.6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M18.5 3.5v4h-4M5.5 20.5v-4h4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  swipe: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7.5" y="4" width="9" height="16" rx="2.5" fill="currentColor"/><path d="M4.5 9.5L2 12l2.5 2.5M19.5 9.5L22 12l-2.5 2.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   bolt: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2.5L5 13.5h6l-1 8 8-11h-6z" fill="currentColor"/></svg>',
   close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>',
   gear: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><circle cx="16" cy="7" r="2.4" fill="none" stroke="currentColor" stroke-width="2.2"/><circle cx="10" cy="17" r="2.4" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>',

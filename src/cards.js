@@ -13,6 +13,7 @@ function header(card) {
   wrap.append(h('div', { class: 'prompt', html: m(card.prompt || '') }));
   const ctx = card.context || card.fn;
   if (ctx) wrap.append(h('div', { class: 'fn-box', html: m(`$$${ctx}$$`) }));
+  if (card.show) wrap.append(h('div', { class: 'fn-box show-box', html: m(card.show) }));
   return wrap;
 }
 
@@ -35,17 +36,20 @@ function videoCard(card) {
 }
 
 // ---------------------------------------------------------------- výběr jedné možnosti
-function choiceCard(card) {
+/** instant = funkce, která se zavolá hned po ťuknutí na možnost (režim Z hlavy: bez tlačítka Zkontrolovat) */
+function choiceCard(card, { instant } = {}) {
   let sel = null;
   const opts = card.options;
-  const list = h('div', { class: 'options' + (card.wide || opts.some(o => o.label.includes('<svg')) ? ' options-wide' : '') });
+  // krátké možnosti do dvou sloupců (palec je má blíž), dlouhé a obrázkové pod sebe
+  const short = instant && opts.length !== 3 && opts.every(o => !o.label.includes('<svg') && !o.label.includes('\\cup') && o.label.length <= 20);
+  const list = h('div', { class: 'options' + (card.wide || opts.some(o => o.label.includes('<svg')) ? ' options-wide' : '') + (short ? ' options-grid2' : '') });
   const btns = opts.map((o, i) => {
     const b = h('button', { class: 'option', type: 'button', onclick: () => select(i) },
       h('span', { class: 'opt-key' }, String(i + 1)), h('span', { class: 'opt-label', html: m(o.label) }));
     list.append(b);
     return b;
   });
-  function select(i) { sel = i; btns.forEach((b, k) => b.classList.toggle('selected', k === i)); }
+  function select(i) { sel = i; btns.forEach((b, k) => b.classList.toggle('selected', k === i)); if (instant) instant(); }
   const el = h('div', { class: 'card' }, header(card), list);
   return {
     el,
@@ -578,11 +582,92 @@ function guidedCard(card) {
   };
 }
 
-export function renderCard(card) {
+// ---------------------------------------------------------------- švih (dvě možnosti: vlevo / vpravo)
+// Odpovídá se tažením karty do strany, ťuknutím na tlačítko, nebo šipkami / klávesami 1 a 2.
+function swipeCard(card, { instant } = {}) {
+  let sel = null, locked = false;
+  const tagL = h('span', { class: 'sw-tag sw-tag-l', html: m(card.left) }), tagR = h('span', { class: 'sw-tag sw-tag-r', html: m(card.right) });
+  const ctx = card.context || card.fn;
+  const face = h('div', { class: 'sw-card' }, tagL, tagR,
+    card.badge ? h('span', { class: 'badge' }, card.badge) : null,
+    h('div', { class: 'prompt', html: m(card.prompt || '') }),
+    ctx ? h('div', { class: 'sw-show', html: m(`$$${ctx}$$`) }) : null,
+    card.show ? h('div', { class: 'sw-show', html: m(card.show) }) : null);
+  const mk = side => h('button', { class: `sw-btn sw-btn-${side[0]}`, type: 'button', onclick: () => choose(side) },
+    h('span', { class: 'sw-arrow', 'aria-hidden': 'true' }, side === 'left' ? '←' : '→'), h('span', { class: 'sw-label', html: m(card[side]) }));
+  const bL = mk('left'), bR = mk('right');
+  const btns = h('div', { class: 'sw-btns' }, bL, bR);
+  const el = h('div', { class: 'card sw' }, face, btns);
+
+  const place = (dx, anim) => {
+    face.style.transition = anim ? 'transform .28s cubic-bezier(.22, 1, .36, 1)' : 'none';
+    face.style.transform = dx ? `translateX(${dx}px) rotate(${dx / 22}deg)` : '';
+    const k = Math.min(1, Math.abs(dx) / 70);
+    tagL.style.opacity = dx < 0 ? k : 0;
+    tagR.style.opacity = dx > 0 ? k : 0;
+  };
+  function choose(side) {
+    if (locked) return;
+    sel = side;
+    bL.classList.toggle('selected', side === 'left');
+    bR.classList.toggle('selected', side === 'right');
+    if (instant) instant();
+  }
+  // tažení: jen vodorovně (svislé posouvání stránky zůstává prohlížeči)
+  let drag = null;
+  face.addEventListener('pointerdown', e => { if (locked || e.button > 0) return; drag = { x: e.clientX, y: e.clientY, on: false, id: e.pointerId }; });
+  face.addEventListener('pointermove', e => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (!drag.on) {
+      if (Math.abs(dx) < 8 || Math.abs(dx) < Math.abs(dy)) return;
+      drag.on = true;
+      try { face.setPointerCapture(e.pointerId); } catch { /* nevadí */ }
+    }
+    place(dx, false);
+  });
+  const end = e => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const dx = e.clientX - drag.x, on = drag.on;
+    drag = null;
+    if (!on) return;
+    if (e.type === 'pointerup' && Math.abs(dx) > 64) { choose(dx > 0 ? 'right' : 'left'); if (!locked) place(0, true); }
+    else place(0, true);
+  };
+  face.addEventListener('pointerup', end);
+  face.addEventListener('pointercancel', end);
+
+  const finish = ok => {
+    locked = true;
+    bL.disabled = bR.disabled = true;
+    (card.correct === 'left' ? bL : bR).classList.add('right');
+    if (sel && sel !== card.correct) (sel === 'left' ? bL : bR).classList.add('wrong');
+    face.classList.add(ok ? 'sw-ok' : 'sw-no');
+    place(ok ? (sel === 'left' ? -46 : 46) : 0, true);
+    tagL.style.opacity = tagR.style.opacity = 0;
+  };
+  return {
+    el,
+    key(k) {
+      if (k === '1' || k === 'ArrowLeft') { choose('left'); return true; }
+      if (k === '2' || k === 'ArrowRight') { choose('right'); return true; }
+    },
+    check() {
+      if (sel == null) return { invalid: 'Vyber jednu možnost.' };
+      const ok = sel === card.correct;
+      finish(ok);
+      return { ok, msg: card.explain || '' };
+    },
+    reveal() { sel = null; finish(false); return { msg: card.explain || '' }; },
+  };
+}
+
+export function renderCard(card, opts) {
   switch (card.type) {
     case 'info': return infoCard(card);
     case 'video': return videoCard(card);
-    case 'choice': return choiceCard(card);
+    case 'choice': return choiceCard(card, opts);
+    case 'swipe': return swipeCard(card, opts);
     case 'multi': return multiCard(card);
     case 'sort': return sortCard(card);
     case 'interval': return intervalCard(card);
