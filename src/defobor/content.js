@@ -14,7 +14,7 @@ const ch = f => () => G.asChoice(f());
 const { guided, semi } = G;
 /** n příkladů náhodně z daných generátorů */
 const mix = (n, ...fs) => Array.from({ length: n }, () => () => pick(fs)());
-const drillInfo = info('Dril: jeden za druhým', `<p>Teď už žádné vysvětlování. Příklady jdou rovnou za sebou, a když to sedí, další naskočí sám.</p>
+const drillInfo = info('Dril: jeden za druhým', `<p>Teď už žádné vysvětlování. Příklady jdou rovnou za sebou. Na další přejdeš, až budeš chtít (Enter nebo Pokračovat).</p>
   <p class="muted">Nespěchej. Rychlost přijde sama, jak se postup usadí v ruce. Na konci uvidíš, kolik ti trvá jeden příklad.</p>`);
 
 const RULES_TABLE = `

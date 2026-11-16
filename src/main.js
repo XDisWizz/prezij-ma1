@@ -2,7 +2,7 @@ import { h, m, pick, shuffle, PRAISE, SOFT, ICONS } from './ui.js';
 import { renderCard } from './cards.js';
 import { store } from './store.js';
 import * as sync from './sync.js';
-import { trophySvg, tierFromAcc, nextGoal, TIER_NAME, TIER_LABEL } from './trophy.js';
+import { trophySvg, tierFromAcc, tierFromMistakes, chyb, nextGoal, TIER_NAME, TIER_LABEL } from './trophy.js';
 import { PATH as DEFOBOR } from './defobor/content.js';
 import { GEN as GEN0, asChoice } from './defobor/gen.js';
 import { GONIO_GEN } from './defobor/gonio.js';
@@ -47,8 +47,10 @@ const fmtTime = s => { s = Math.round(s); const mm = Math.floor(s / 60), ss = s 
 const go = hash => { location.hash = hash; };
 
 // ------------------------------------------------------------ pohárky
-const lessonTier = id => { const r = store.get().done[id]; return r ? tierFromAcc(r.acc) : 0; };
+// pohárek je uložený v záznamu lekce; starší záznamy bez něj se hodnotí po staru podle přesnosti napoprvé
+const lessonTier = id => { const r = store.get().done[id]; return r ? (r.tier ?? tierFromAcc(r.acc)) : 0; };
 function fluencyTier(pid) {
+  if (store.get().done['fluency-' + pid]) return lessonTier('fluency-' + pid);
   const fs = store.get().fluency.filter(f => f.path === pid && f.total);
   if (!fs.length) return 0;
   return tierFromAcc(Math.max(...fs.map(f => f.correct / f.total)));
@@ -340,7 +342,7 @@ function pathScreen(id) {
       const est = lessonStats(l);
       const rec = store.get().done[l.id];
       const meta = isDone
-        ? `${TIER_LABEL[tier]} · ${Math.round((rec?.acc ?? 1) * 100)} % napoprvé${l.drill && rec?.lastAvg ? ` · ${fmtTime(rec.lastAvg)}/příklad` : ''}`
+        ? `${TIER_LABEL[tier]} · ${rec?.mist != null ? (rec.mist ? `nejlépe ${chyb(rec.mist)}` : 'bez chyby') : `${Math.round((rec?.acc ?? 1) * 100)} % napoprvé`}${l.drill && rec?.lastAvg ? ` · ${fmtTime(rec.lastAvg)}/příklad` : ''}`
         : `≈ ${est.min} min · ${est.ex} ${est.ex === 1 ? 'úloha' : est.ex < 5 ? 'úlohy' : 'úloh'}`;
       const tag = l.drill ? h('span', { class: 'tag tag-drill' }, 'DRIL') : l.boss ? h('span', { class: 'tag tag-boss' }, 'SÉRIE') : null;
       const item = h('button', {
@@ -416,8 +418,10 @@ function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, 
   if (!resumed) clearLessonSave();
   const queue = resumed ? resumed.queue : factories.map(f => ({ f, tries: 0, seed: newSeed() }));
   let idx = resumed?.pos ?? 0, firstOk = resumed?.firstOk ?? 0, exercises = resumed?.exercises ?? 0;
+  // chyby: špatně, „Nevím“ nebo správně jen s nápovědou; počítají se i v opakováních
+  let mistakes = resumed?.mistakes ?? (resumed?.attemptLog ?? []).filter(a => !a.ok).length;
   let t0 = performance.now() - (resumed?.elapsed ?? 0) * 1000, cardT0 = 0;
-  let cur = null, phase = 'answer', cardData = null, attemptLog = resumed?.attemptLog ?? [], row = resumed?.row ?? 0, bestRow = resumed?.bestRow ?? 0, autoT = null;
+  let cur = null, phase = 'answer', cardData = null, attemptLog = resumed?.attemptLog ?? [], row = resumed?.row ?? 0, bestRow = resumed?.bestRow ?? 0;
   const drill = mode === 'drill';
   // tahák si v rámci lekce pamatuje rozbalené sekce a místo, kde byl odscrollovaný (i přes obnovení stránky)
   const sheetState = resumed?.sheet && Array.isArray(resumed.sheet.open) ? resumed.sheet : { open: [0], scroll: 0 };
@@ -427,7 +431,7 @@ function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, 
       localStorage.setItem(LESSON_KEY, JSON.stringify({
         key: resumeKey, n: pool.length, at: Date.now(), pos,
         queue: queue.map(q => [pool.indexOf(q.f), q.tries, q.hinted ? 1 : 0, q.seed]),
-        firstOk, exercises, row, bestRow, attemptLog: attemptLog.slice(-300), elapsed: (performance.now() - t0) / 1000,
+        firstOk, exercises, mistakes, row, bestRow, attemptLog: attemptLog.slice(-300), elapsed: (performance.now() - t0) / 1000,
         sheet: sheetState,
       }));
     } catch { /* plné úložiště / soukromé okno: lekce jede dál, jen bez zálohy */ }
@@ -436,12 +440,19 @@ function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, 
   const bar = h('div', { class: 'bar-fill' });
   const closeBtn = h('button', { class: 'icon-btn', 'aria-label': 'Ukončit lekci', html: ICONS.close, onclick: () => askClose() });
   const rowPill = h('span', { class: 'row-pill' });
+  const repPill = h('span', { class: 'row-pill rep-pill', title: 'Příklady po chybě, které tě ještě čekají' });
   const stage = h('div', { class: 'stage' });
   const foot = h('footer', { class: 'lesson-foot' });
   // tahák je k dispozici v lekcích, drilech i procvičování; ve zkoušce plynulosti ne (tam se měří, co už umíš)
   const cheatBtn = cheat && mode !== 'fluency'
     ? h('button', { class: 'cheat-btn', type: 'button', title: 'Tahák: vzorce a pravidla', 'aria-label': 'Otevřít tahák', onclick: () => openSheet('Tahák', cheat, sheetState), html: ICONS.book + '<span>Tahák</span>' }) : null;
-  const screen = h('div', { class: 'lesson' }, h('div', { class: 'lesson-top' }, closeBtn, h('div', { class: 'bar lesson-bar' }, bar), drill ? rowPill : null, cheatBtn), stage, foot);
+  const screen = h('div', { class: 'lesson' }, h('div', { class: 'lesson-top' }, closeBtn, h('div', { class: 'bar lesson-bar' }, bar), repPill, drill ? rowPill : null, cheatBtn), stage, foot);
+  // kolik opakování ještě čeká (from = idx při zadání včetně aktuálního, idx + 1 po odpovědi)
+  const setRep = (from = idx) => {
+    const n = queue.slice(from).filter(q => q.tries > 0).length;
+    repPill.hidden = !n;
+    repPill.innerHTML = ICONS.repeat + `<b>${n}</b><span>k opakování</span>`;
+  };
   const setRow = () => { rowPill.innerHTML = ICONS.bolt + `<b>${row}</b><span>v řadě</span>`; rowPill.classList.toggle('hot', row >= 3); };
   if (drill) setRow();
   app.replaceChildren(screen);
@@ -459,6 +470,7 @@ function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, 
     if (idx >= queue.length) return finish();
     saveProgress(idx);   // před započtením úlohy → po obnovení se tahle úloha započte jen jednou
     bar.style.width = `${100 * idx / queue.length}%`;
+    setRep();
     const item = queue[idx];
     item.seed ??= newSeed();
     cardData = seeded(item.seed, () => item.f());
@@ -467,6 +479,7 @@ function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, 
     phase = 'answer';
     cardT0 = performance.now();
     stage.replaceChildren(cur.el);
+    if (item.tries > 0) cur.el.prepend(h('div', { class: 'repeat-tag', html: ICONS.repeat + '<span>Opakování po chybě</span>' }));
     stage.scrollTop = 0;
     cur.el.classList.add('enter');
     foot.className = 'lesson-foot';
@@ -487,9 +500,12 @@ function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, 
   }
   const item = () => queue[idx];
 
+  // chyba se vrací na konec (s jinými čísly), dokud ji nevyřešíš; pojistka MAX_REPEAT, ať se lekce nezacyklí
+  const MAX_REPEAT = 4;
+  const willRepeat = () => mode !== 'fluency' && item().tries < MAX_REPEAT;
   function requeue() {
     const it = item();
-    if (mode !== 'fluency' && it.tries < 2) queue.push({ f: it.f, tries: it.tries + 1, seed: newSeed() });   // podobný příklad, jiná čísla
+    if (willRepeat()) queue.push({ f: it.f, tries: it.tries + 1, seed: newSeed() });   // podobný příklad, jiná čísla
   }
 
   function check() {
@@ -502,10 +518,10 @@ function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, 
     store.record(weakKey(cardData.key), r.ok, dt);
     attemptLog.push({ ok: r.ok, t: dt });
     if (r.ok && it.tries === 0 && !it.hinted) firstOk++;
+    if (!r.ok || it.hinted) mistakes++;
     if (!r.ok) requeue();
     if (drill) { row = r.ok ? row + 1 : 0; bestRow = Math.max(bestRow, row); setRow(); }
     feedback(r.ok, r);
-    if (drill && r.ok) autoT = setTimeout(next, 900);   // dril: správně → rovnou další příklad
   }
   function dontKnow() {
     if (phase !== 'answer') return;
@@ -514,6 +530,7 @@ function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, 
     if (drill) { row = 0; setRow(); }
     store.record(weakKey(cardData.key), false, (performance.now() - cardT0) / 1000);
     attemptLog.push({ ok: false, t: 0 });
+    mistakes++;
     requeue();
     feedback(false, { ...r, dontKnow: true });
   }
@@ -521,13 +538,14 @@ function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, 
   function feedback(ok, r) {
     phase = 'feedback';
     saveProgress(idx + 1);   // odpověď už je započtená → po obnovení se pokračuje další úlohou
+    setRep(idx + 1);
     const parts = [];
     const title = r.dontKnow ? 'V pohodě, tady je postup:' : ok ? pick(PRAISE) : pick(SOFT);
     if (r.msg) parts.push(h('div', { class: 'fb-msg', html: m(r.msg) }));
     const steps = r.steps || null;
     if (steps && steps.length) parts.push(stepsBox(steps, true));
     else if (r.stepsOptional && r.stepsOptional.length) parts.push(stepsBox(r.stepsOptional, false));
-    if (!ok && mode !== 'fluency' && item().tries < 2) parts.push(h('p', { class: 'fb-note' }, 'Podobný příklad dostaneš ještě jednou na konci lekce.'));
+    if (!ok && willRepeat()) parts.push(h('p', { class: 'fb-note' }, 'Podobný příklad dostaneš znovu na konci lekce.'));
     // podrobnosti pod příkladem (dají se v klidu číst a scrollovat), dole jen krátké shrnutí + tlačítko
     if (parts.length) {
       const detail = h('div', { class: 'fb-detail ' + (ok ? 'fb-ok' : 'fb-soft') }, parts);
@@ -546,7 +564,7 @@ function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, 
     return det;
   }
 
-  function next() { clearTimeout(autoT); if (phase !== 'feedback' && !cur.passive) return; idx++; show(); }
+  function next() { if (phase !== 'feedback' && !cur.passive) return; idx++; show(); }
 
   function finish() {
     clearLessonSave();
@@ -554,7 +572,7 @@ function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, 
     const acc = exercises ? firstOk / exercises : 1;
     const solved = attemptLog.filter(a => a.ok);
     const avg = solved.length ? solved.reduce((s, a) => s + a.t, 0) / solved.length : null;
-    onFinish({ time, acc, firstOk, exercises, attemptLog, avg, bestRow });
+    onFinish({ time, acc, firstOk, exercises, mistakes, attemptLog, avg, bestRow });
   }
 
   function onKey(e) {
@@ -570,7 +588,7 @@ function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, 
     if (e.key === 'Escape') askClose();
   }
   document.addEventListener('keydown', onKey);
-  cleanup = () => { clearTimeout(autoT); document.removeEventListener('keydown', onKey); };
+  cleanup = () => { document.removeEventListener('keydown', onKey); };
   show();
   if (resumed && resumed.pos > 0 && idx < queue.length) toast('Pokračuješ tam, kde lekce skončila.');
 }
@@ -584,12 +602,13 @@ function lessonScreen(id) {
   runLesson({
     factories: lesson.cards, title: lesson.title, back, mode: lesson.drill ? 'drill' : 'lesson', pathId: path.id, cheat: path.content.cheat,
     resumeKey: 'lekce/' + id, pool: lesson.cards,
-    onFinish: ({ time, acc, firstOk, exercises, avg, bestRow }) => {
+    onFinish: ({ time, acc, firstOk, exercises, mistakes, avg, bestRow }) => {
       const prev = store.get().done[id];
       if (!Object.keys(store.get().done).length) offerAfterEnd = true;
       const tierBefore = lessonTier(id);
-      const res = store.finishLesson(id, { acc, time, avg });
-      const trophy = { before: tierBefore, now: lessonTier(id), got: tierFromAcc(acc) };
+      const got = tierFromMistakes(mistakes, exercises);
+      const res = store.finishLesson(id, { acc, time, avg, tier: got, mist: mistakes });
+      const trophy = { before: tierBefore, now: lessonTier(id), got, n: exercises };
       let extra = null;
       if (lesson.drill && avg) {
         const was = prev?.lastAvg;
@@ -602,32 +621,36 @@ function lessonScreen(id) {
             : `Minule ${fmtTime(was)} na příklad. Rychlost přijde sama, hlavně ať to sedí.`)
             : h('p', { class: 'tempo muted' }, 'Až dril zopakuješ, uvidíš tady, jak zrychluješ.'));
       }
-      endScreen({ title: lesson.drill ? 'Dril hotový!' : 'Lekce hotová!', sub: lesson.title, acc, time, exercises, res, back, again: '#/lekce/' + id, nextId: all[index + 1]?.id, extra, trophy });
+      endScreen({ title: lesson.drill ? 'Dril hotový!' : 'Lekce hotová!', sub: lesson.title, acc, time, exercises, mistakes, res, back, again: '#/lekce/' + id, nextId: all[index + 1]?.id, extra, trophy });
     },
   });
 }
 
-function endScreen({ title, sub, acc, time, exercises, res, back, again, nextId, extra, trophy }) {
+function endScreen({ title, sub, acc, time, exercises, mistakes = 0, res, back, again, nextId, extra, trophy }) {
   const pct = Math.round(acc * 100);
   const msg = !exercises ? 'Teorie je v hlavě. Příště už počítáme.'
+    : !mistakes ? 'Bez jediné chyby. Tohle už máš v ruce.'
     : pct >= 90 ? 'Šlape ti to! Tohle už máš v ruce.'
       : pct >= 60 ? 'Dobrá práce. Chyby jsou přesně to, z čeho se mozek učí nejvíc.'
         : 'Tohle bylo těžší, a stejně je to hotové. Zkus lekci zítra znovu a uvidíš ten rozdíl.';
   let tBox = null;
   if (trophy) {
-    const { before, now, got } = trophy;
+    const { before, now, got, n = exercises } = trophy;
     const head = now > before ? (before ? `Vylepšeno na ${TIER_NAME[now]}!` : `Nový pohárek: ${TIER_NAME[now]}!`)
       : got < now ? `Tvůj pohárek zůstává: ${TIER_NAME[now]}` : `Pohárek: ${TIER_NAME[now]}`;
+    // proč vyšel právě tenhle pohárek
+    const why = !exercises ? null : `Tento pokus: ${mistakes ? chyb(mistakes) : 'bez chyby'} = ${TIER_NAME[got]}.`;
     tBox = h('div', { class: 'end-trophy' + (now > before ? ' new' : '') },
       h('div', { class: 'end-trophy-icon', html: trophySvg(now, 128) }),
       h('b', {}, head),
-      h('span', { class: 'muted small' }, nextGoal(now)));
+      why ? h('span', { class: 'small' }, why) : null,
+      h('span', { class: 'muted small' }, nextGoal(now, n)));
   }
   const main = h('main', { class: 'page end' },
     tBox || h('div', { class: 'end-burst', html: ICONS.star }),
     h('h1', {}, title), h('p', { class: 'muted' }, sub),
     h('div', { class: 'metric-row' },
-      exercises ? h('div', { class: 'metric' }, h('span', { class: 'muted small' }, 'Napoprvé'), h('b', {}, pct + ' %')) : null,
+      exercises ? h('div', { class: 'metric' }, h('span', { class: 'muted small' }, 'Chyby'), h('b', {}, String(mistakes))) : null,
       h('div', { class: 'metric' }, h('span', { class: 'muted small' }, 'Čas'), h('b', {}, fmtTime(time)))),
     res && res.streakUp ? h('p', { class: 'streak-msg', html: ICONS.flame + `<span>Série: ${res.streak} ${res.streak === 1 ? 'den' : res.streak < 5 ? 'dny' : 'dní'}</span>` }) : null,
     extra || null,
@@ -654,9 +677,9 @@ function practiceScreen(pathId) {
   runLesson({
     factories: shuffle(fs), title: 'Procvičování', back, pathId: p.id, cheat: p.content.cheat,
     resumeKey: 'procvic/' + p.id, pool: [...new Set([...Object.values(p.gen), ...pool])],
-    onFinish: ({ time, acc, firstOk, exercises }) => {
+    onFinish: ({ time, acc, firstOk, exercises, mistakes }) => {
       const res = store.finishLesson('practice-' + p.id, { acc, time });
-      endScreen({ title: 'Procvičeno!', sub: weak.length ? 'Zaměřeno na tvoje slabší místa' : 'Mix ze všeho', acc, time, exercises, res, back, again: '#/procvic/' + p.id });
+      endScreen({ title: 'Procvičeno!', sub: weak.length ? 'Zaměřeno na tvoje slabší místa' : 'Mix ze všeho', acc, time, exercises, mistakes, res, back, again: '#/procvic/' + p.id });
     },
   });
 }
@@ -670,13 +693,14 @@ function fluencyScreen(pathId) {
   runLesson({
     factories: fs, title: fl.title, back, mode: 'fluency', pathId: p.id,
     resumeKey: 'plynulost/' + p.id, pool: fl.pool,
-    onFinish: ({ time, acc, firstOk, exercises }) => {
+    onFinish: ({ time, acc, firstOk, exercises, mistakes }) => {
       const hist = store.get().fluency.filter(f => f.path === p.id);
       const tierBefore = fluencyTier(p.id);
       const entry = { path: p.id, d: Date.now(), time: Math.round(time), correct: firstOk, total: exercises };
       store.addFluency(entry);
-      const res = store.finishLesson('fluency-' + p.id, { acc, time });
-      const trophy = { before: tierBefore, now: fluencyTier(p.id), got: tierFromAcc(exercises ? firstOk / exercises : 0) };
+      const got = tierFromMistakes(mistakes, exercises);
+      const res = store.finishLesson('fluency-' + p.id, { acc, time, tier: got, mist: mistakes });
+      const trophy = { before: tierBefore, now: fluencyTier(p.id), got, n: exercises };
       const all = [...hist, entry].slice(-6);
       const maxT = Math.max(...all.map(a => a.time));
       const master = firstOk >= exercises - 1 && time <= 600;
@@ -687,7 +711,7 @@ function fluencyScreen(pathId) {
           h('span', { class: 'hist-bar', style: `width:${Math.max(8, 100 * a.time / maxT)}%` }),
           h('span', { class: 'small' }, `${fmtTime(a.time)} · ${a.correct}/${a.total}`)))),
         hist.length ? h('p', { class: 'small' }, time < Math.min(...hist.map(a => a.time)) ? 'Nový rekord v čase!' : 'Rychlost přijde sama, s každým opakováním.') : null);
-      endScreen({ title: 'Zkouška plynulosti hotová', sub: `${firstOk} z ${exercises} správně napoprvé`, acc, time, exercises, res, back, again: '#/plynulost/' + p.id, extra, trophy });
+      endScreen({ title: 'Zkouška plynulosti hotová', sub: `${firstOk} z ${exercises} správně napoprvé`, acc, time, exercises, mistakes, res, back, again: '#/plynulost/' + p.id, extra, trophy });
     },
   });
 }
@@ -710,8 +734,9 @@ function collectionScreen(focus) {
       h('div', { class: 'tier-card t' + t }, h('span', { html: trophySvg(t, 44) }), h('b', {}, String(n)), h('span', { class: 'muted small' }, l)))));
   main.append(h('details', { class: 'rules-box' }, h('summary', {}, 'Jak získat pohárky?'),
     h('ul', {}, h('li', { html: trophySvg(1, 24) + '<span><b>Bronz</b>: dokonči lekci.</span>' }),
-      h('li', { html: trophySvg(2, 24) + '<span><b>Stříbro</b>: aspoň 80 % úloh správně napoprvé.</span>' }),
-      h('li', { html: trophySvg(3, 24) + '<span><b>Zlato</b>: všechno správně napoprvé, bez nápovědy a bez „Nevím“.</span>' })),
+      h('li', { html: trophySvg(2, 24) + '<span><b>Stříbro</b>: nejvýš 1 chyba (v lekcích s 12 a více příklady nejvýš 2).</span>' }),
+      h('li', { html: trophySvg(3, 24) + '<span><b>Zlato</b>: celá lekce bez jediné chyby.</span>' })),
+    h('p', { class: 'muted small' }, 'Chyba je špatná odpověď, „Nevím“ i příklad vyřešený s nápovědou. Počítají se i chyby v opakováních na konci lekce: příklad, ve kterém chybuješ, se vrací s jinými čísly, dokud ho nevyřešíš (nejvýš 4×).'),
     h('p', { class: 'muted small' }, 'Lekci můžeš opakovat kolikrát chceš, počítá se nejlepší pokus. Pohárek se nikdy nezhorší.')));
   let target = null;
   for (const p of paths) {

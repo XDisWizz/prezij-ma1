@@ -1,5 +1,6 @@
 // Pokrok studenta – ukládá se v prohlížeči (localStorage), volitelně se synchronizuje (src/sync.js).
 import { syncSubset } from './syncmerge.js';
+import { tierFromAcc } from './trophy.js';
 
 const KEY = 'ma1-progress-v1';
 
@@ -41,12 +42,18 @@ export const store = {
   set(patch) { Object.assign(state, patch); save(); },
   isDone: id => !!state.done[id],
   /** zaznamená dokončenou lekci, vrací { xp, streak, streakUp } */
-  finishLesson(id, { acc, time, xp, avg }) {
+  /** tier + mist (počet chyb) se ukládají jen u lekcí s pohárkem; pohárek i počet chyb se drží nejlepší */
+  finishLesson(id, { acc, time, xp, avg, tier, mist }) {
     const prev = state.done[id];
-    state.done[id] = {
+    const rec = {
       at: Date.now(), acc: Math.max(acc, prev?.acc ?? 0), time: prev ? Math.min(time, prev.time) : time, runs: (prev?.runs ?? 0) + 1,
       lastAvg: avg ?? prev?.lastAvg, bestAvg: avg ? Math.min(avg, prev?.bestAvg ?? Infinity) : prev?.bestAvg,
     };
+    if (tier != null) rec.tier = Math.max(tier, prev ? (prev.tier ?? tierFromAcc(prev.acc)) : 0);
+    else if (prev?.tier != null) rec.tier = prev.tier;
+    if (mist != null) rec.mist = Math.min(mist, prev?.mist ?? Infinity);
+    else if (prev?.mist != null) rec.mist = prev.mist;
+    state.done[id] = rec;
     state.xp += xp || 0;
     const t = today();
     let streakUp = false;

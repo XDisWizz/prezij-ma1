@@ -7,7 +7,7 @@ const info = (title, body) => () => ({ type: 'info', title, body });
 const video = (title, id, body) => () => ({ type: 'video', title, url: VIDEO(id), body });
 const { guided, semi } = G;
 const mix = (n, ...fs) => Array.from({ length: n }, () => () => pick(fs)());
-const drillInfo = info('Dril: jeden za druhým', `<p>Příklady jdou rovnou za sebou, a když to sedí, další naskočí sám.</p>
+const drillInfo = info('Dril: jeden za druhým', `<p>Příklady jdou rovnou za sebou, bez vysvětlování mezi nimi. Na další přejdeš, až budeš chtít (Enter nebo Pokračovat).</p>
   <p class="muted">„+ C“ psát nemusíš. Absolutní hodnotu napíšeš jako <b>|x|</b>, logaritmus jako <b>ln|x|</b>.</p>`);
 
 const TABLE_HTML = `<table class="rules dtable">

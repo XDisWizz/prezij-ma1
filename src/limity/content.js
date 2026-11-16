@@ -8,7 +8,7 @@ const info = (title, body) => () => ({ type: 'info', title, body });
 const video = (title, id, body) => () => ({ type: 'video', title, url: VIDEO(id), body });
 const { guided, semi } = G;
 const mix = (n, ...fs) => Array.from({ length: n }, () => () => pick(fs)());
-const drillInfo = info('Dril: jeden za druhým', `<p>Příklady jdou rovnou za sebou, a když to sedí, další naskočí sám.</p>
+const drillInfo = info('Dril: jeden za druhým', `<p>Příklady jdou rovnou za sebou, bez vysvětlování mezi nimi. Na další přejdeš, až budeš chtít (Enter nebo Pokračovat).</p>
   <p class="muted">Výsledek můžeš psát i jako zlomek nebo s odmocninou: <b>3/4</b>, <b>√5</b>, <b>e^2</b>. Na ∞ a „neexistuje“ jsou tlačítka.</p>`);
 
 const ARITH_TABLE = `<table class="rules">

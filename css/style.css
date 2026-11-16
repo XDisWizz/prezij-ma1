@@ -267,6 +267,11 @@ button.path-card:active { transform: translateY(2px); }
 .row-pill span { font-size: 13px; font-weight: 700; }
 .row-pill.hot { color: #fff; background: var(--gold); }
 .row-pill.hot span { color: #fff; }
+.rep-pill { color: var(--soft-text); background: var(--soft); }
+.rep-pill[hidden] { display: none; }
+.repeat-tag { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 10px; padding: 4px 10px; border-radius: 99px; background: var(--soft); color: var(--soft-text); font-size: 13px; font-weight: 800; }
+.repeat-tag svg { width: 16px; height: 16px; flex: none; }
+@media (max-width: 420px) { .lesson-top .row-pill span { display: none; } .lesson-top { gap: 8px; } }
 .drill-box { max-width: 420px; margin: 0 auto; }
 .tempo { font-weight: 700; }
 .tempo.faster { color: var(--primary-dark); }

@@ -7,7 +7,7 @@ const VIDEO = id => `https://opencast.vsb.cz/play/${id}`;
 const info = (title, body) => () => ({ type: 'info', title, body });
 const video = (title, id, body) => () => ({ type: 'video', title, url: VIDEO(id), body });
 const mix = (n, ...fs) => Array.from({ length: n }, () => () => pick(fs)());
-const drillInfo = info('Dril: jeden za druhým', `<p>Příklady jdou rovnou za sebou, a když to sedí, další naskočí sám.</p>
+const drillInfo = info('Dril: jeden za druhým', `<p>Příklady jdou rovnou za sebou, bez vysvětlování mezi nimi. Na další přejdeš, až budeš chtít (Enter nebo Pokračovat).</p>
   <p class="muted">Body piš oddělené středníkem: <b>-1; 3</b>. Když žádné nejsou, klikni na „žádné“.</p>`);
 
 const CURVE = `<svg class="parabola" viewBox="0 0 240 120" aria-hidden="true">

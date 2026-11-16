@@ -1,17 +1,31 @@
-// Pohárky: bronz = dokončeno, stříbro = aspoň 80 % napoprvé, zlato = 100 % napoprvé.
+// Pohárky podle počtu chyb (od 2026-11-16). Chyba = špatná odpověď, „Nevím“ nebo správně jen s nápovědou,
+// a počítá se i v opakováních na konci lekce.
+//   zlato   = bez jediné chyby
+//   stříbro = nejvýš 1 chyba (u lekcí s aspoň 12 příklady nejvýš 2)
+//   bronz   = dokončeno
+// Starší záznamy bez uloženého pohárku se dál hodnotí podle přesnosti napoprvé (tierFromAcc), aby nikomu nic nezmizelo.
 export const TIER = { NONE: 0, BRONZE: 1, SILVER: 2, GOLD: 3 };
 export const TIER_NAME = ['', 'bronz', 'stříbro', 'zlato'];
 export const TIER_LABEL = ['Zatím nezískáno', 'Bronz', 'Stříbro', 'Zlato'];
 export const SILVER_AT = 0.8;
+export const BIG_LESSON = 12;
 
-/** pohárek za lekci podle nejlepší přesnosti napoprvé */
+/** staré hodnocení podle nejlepší přesnosti napoprvé (jen pro záznamy z doby před počítáním chyb) */
 export const tierFromAcc = acc => (acc == null ? 0 : acc >= 0.999 ? 3 : acc >= SILVER_AT ? 2 : 1);
 
+/** kolik chyb ještě dá stříbro; n = počet příkladů v lekci */
+export const silverMax = n => (n >= BIG_LESSON ? 2 : 1);
+/** pohárek za pokus podle počtu chyb */
+export const tierFromMistakes = (mist, n) => (mist <= 0 ? 3 : mist <= silverMax(n) ? 2 : 1);
+
+/** 1 chyba, 2 chyby, 5 chyb */
+export const chyb = n => `${n} ${n === 1 ? 'chyba' : n >= 2 && n <= 4 ? 'chyby' : 'chyb'}`;
+
 /** co je potřeba na další úroveň */
-export function nextGoal(tier) {
+export function nextGoal(tier, n = 0) {
   if (tier === 0) return 'Dokonči lekci a máš bronz.';
-  if (tier === 1) return `Na stříbro potřebuješ aspoň ${Math.round(SILVER_AT * 100)} % napoprvé.`;
-  if (tier === 2) return 'Na zlato všechno napoprvé, bez nápovědy.';
+  if (tier === 1) return `Na stříbro nejvýš ${chyb(silverMax(n))}, na zlato žádná.`;
+  if (tier === 2) return 'Na zlato celou lekci bez chyby a bez nápovědy.';
   return 'Maximum! Tenhle máš celý.';
 }
 

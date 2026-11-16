@@ -4,6 +4,8 @@
 // takže synchronizace nikdy nic nesmaže. Jediná výjimka je „Začít úplně od začátku“:
 // to zvýší `epoch` a novější epocha přebije starší.
 
+import { tierFromAcc } from './trophy.js';
+
 const FLUENCY_PER_PATH = 10;   // posledních 10 pokusů na cestu + vždy ten nejlepší
 const MAX_LESSONS = 2000;
 const MAX_WEAK = 500;
@@ -51,6 +53,9 @@ export function sanitize(raw) {
       const la = num(v.lastAvg, 0, 1e6), ba = num(v.bestAvg, 0, 1e6);
       if (la !== undefined) e.lastAvg = la;
       if (ba !== undefined) e.bestAvg = ba;
+      const tier = num(v.tier, 0, 3), mist = num(v.mist, 0, 1e4);
+      if (tier !== undefined) e.tier = Math.floor(tier);
+      if (mist !== undefined) e.mist = Math.floor(mist);
       out.done[id] = e;
     }
   }
@@ -81,6 +86,8 @@ function compactDone(done) {
     const e = { at: v.at ?? 0, acc: r3(v.acc ?? 0), time: r1(v.time ?? 0), runs: v.runs ?? 1 };
     if (v.lastAvg != null) e.lastAvg = r1(v.lastAvg);
     if (v.bestAvg != null) e.bestAvg = r1(v.bestAvg);
+    if (v.tier != null) e.tier = v.tier;
+    if (v.mist != null) e.mist = v.mist;
     out[id] = e;
   }
   return out;
@@ -121,6 +128,10 @@ function mergeDone(a, b) {
     if (lastAvg !== undefined) e.lastAvg = lastAvg;
     const bests = [l.bestAvg, r.bestAvg].filter(x => x !== undefined);
     if (bests.length) e.bestAvg = Math.min(...bests);
+    // pohárek: lepší z obou (záznam bez uloženého pohárku se hodnotí po staru podle přesnosti)
+    if (l.tier !== undefined || r.tier !== undefined) e.tier = Math.max(l.tier ?? tierFromAcc(l.acc), r.tier ?? tierFromAcc(r.acc));
+    const mists = [l.mist, r.mist].filter(x => x !== undefined);
+    if (mists.length) e.mist = Math.min(...mists);
     out[id] = e;
   }
   return out;
