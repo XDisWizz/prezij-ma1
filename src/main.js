@@ -644,10 +644,10 @@ function endScreen({ title, sub, acc, time, exercises, mistakes = 0, res, back, 
     // proč vyšel právě tenhle pohárek
     const why = !exercises ? null : `Tento pokus: ${mistakes ? chyb(mistakes) : 'bez chyby'} = ${TIER_NAME[got]}.`;
     const texts = [h('b', {}, head), why ? h('span', { class: 'small' }, why) : null, h('span', { class: 'muted small' }, nextGoal(now, n))];
-    if (got === 3 && goldBlob) {
+    if (got === 3) {   // zlato v tomhle pokusu → vždycky velký vstup s tancem
       gold = goldHero();
       tBox = h('div', { class: 'end-trophy gold' }, gold.hero, texts);
-      gold.intro = now > before && !matchMedia('(prefers-reduced-motion: reduce)').matches;   // velký vstup jen u nově získaného zlata
+      gold.intro = true;
     } else {
       tBox = h('div', { class: 'end-trophy' + (now > before ? ' new' : '') },
         h('div', { class: 'end-trophy-icon', html: trophySvg(now, 128) }), texts);
@@ -672,25 +672,26 @@ function endScreen({ title, sub, acc, time, exercises, mistakes = 0, res, back, 
 }
 
 // ------------------------------------------------------------ zlatý pohárek: tanec
-// Animace (animovaný WebP s průhledností, 193 snímků po 40 ms) se stahuje až při spuštění lekce.
-// Velký vstup přes celou obrazovku trvá jedno taneční kolo. Od snímku 166 postava stojí v klidu:
-// v tu chvíli přeletí na své místo vedle pohárku a dosedne přesně na konec kola.
+// Při každém zlatu: přes celou obrazovku scéna „ZLATO“ s tančící postavou (animovaný WebP s průhledností).
+// Scéna zůstává, dokud se neklepne (po 2 s se objeví nápověda). Pak postava plynule přeletí na své místo
+// vedle pohárku a tmavá scéna se stáhne do zlaté záře za ní.
 const GOLD_SRC = 'media/zlato.webp';
-const GOLD_LAND = 6640;   // ms: začátek klidné pózy = start přeletu
-const GOLD_FLY = 1080;    // ms: zbytek kola, přistání = začátek dalšího kola
+const GOLD_FLY = 1080;    // ms: přelet postavy na místo vedle pohárku
+const GOLD_HINT = 2000;   // ms: kdy se objeví „Klikni pro přeskočení“
 let goldBlob = null, goldReq = null, goldUrl = null;
-function preloadGold() {
-  if (goldBlob || goldReq) return;
-  goldReq = fetch(GOLD_SRC).then(r => (r.ok ? r.blob() : null)).then(b => { goldBlob = b; }, () => {}).finally(() => { goldReq = null; });
+/** stáhne animaci (jednou); vrací slib s blobem, nebo null, když to nejde (offline a ještě nestaženo) */
+function loadGold() {
+  if (goldBlob) return Promise.resolve(goldBlob);
+  return goldReq ||= fetch(GOLD_SRC).then(r => (r.ok ? r.blob() : null)).then(b => (goldBlob = b), () => null).finally(() => { goldReq = null; });
 }
+const preloadGold = () => { loadGold(); };
 /** pokaždé nová adresa → animace jede od prvního snímku (stejná adresa by navázala na už běžící kolo) */
-function goldImg() {
+function goldSrc() {
   if (goldUrl) URL.revokeObjectURL(goldUrl);
-  goldUrl = URL.createObjectURL(goldBlob);
-  return h('img', { class: 'gold-fig', src: goldUrl, alt: '', draggable: 'false' });
+  return (goldUrl = URL.createObjectURL(goldBlob));
 }
 function goldHero() {
-  const fig = goldImg();
+  const fig = h('img', { class: 'gold-fig', alt: '', draggable: 'false' });
   const glow = h('div', { class: 'gold-glow' });
   const ring = h('div', { class: 'gold-ring' });
   const cup = h('div', { class: 'gold-cup', html: trophySvg(3, 128) });
@@ -705,42 +706,62 @@ const EASE_POP = 'cubic-bezier(.34, 1.56, .64, 1)';
 
 function goldIntro(main, tBox, g) {
   const { fig, glow, ring, cup, slot, shelf } = g;
-  // všechno ostatní na stránce se po přistání postupně objeví
+  const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;   // omezené animace: scéna se jen jemně rozsvěcuje, nic nelétá
+  // všechno ostatní na stránce se po klepnutí postupně objeví
   const rev = [...tBox.children].filter(el => el !== g.hero).concat([...main.children].filter(el => el !== tBox));
-  const hidden = [glow, cup, shelf, ...rev];
-  hidden.forEach(el => { el.style.opacity = '0'; });
+  [glow, cup, shelf, ...rev].forEach(el => { el.style.opacity = '0'; });
 
   const SYMS = '∫∂∞π√Σ′Δ';
+  const rnd = (a, b) => a + Math.random() * (b - a);
   const conf = h('div', { class: 'gold-conf' }, Array.from({ length: 22 }, (_, i) => h('span', {
-    style: `--x:${(i * 37 + Math.random() * 20) % 100}%;--s:${16 + Math.random() * 18}px;--d:${3.2 + Math.random() * 2.6}s;--w:${-Math.random() * 5}s;--r:${Math.round((Math.random() - .5) * 720)}deg;--c:${['#ffe066', '#f5b800', '#fffbe0', '#ef9f27'][i % 4]}`,
+    style: `--x:${(i * 37 + rnd(0, 20)) % 100}%;--s:${rnd(16, 34)}px;--d:${rnd(3.2, 5.8)}s;--w:${-rnd(0, 5)}s;--r:${Math.round(rnd(-360, 360))}deg;--c:${['#ffe066', '#f5b800', '#fffbe0', '#ef9f27'][i % 4]}`,
   }, SYMS[i % SYMS.length])));
-  const bg = h('div', { class: 'gold-bg' }, h('div', { class: 'gold-rays' }));
+  // zlaté jiskry stoupají zespodu (rozmazané tečky různé velikosti)
+  const bokeh = h('div', { class: 'gold-bokeh' }, Array.from({ length: 18 }, () => h('i', {
+    style: `--x:${rnd(0, 100)}%;--z:${rnd(4, 14)}px;--d:${rnd(5, 10)}s;--w:${-rnd(0, 10)}s;--o:${rnd(.35, .9)};--sx:${rnd(-40, 40)}px`,
+  })));
+  const pulse = h('div', { class: 'gold-pulse' });
+  const bg = h('div', { class: 'gold-bg' }, h('div', { class: 'gold-rays' }), h('div', { class: 'gold-rays gold-rays2' }), pulse);
   const title = h('div', { class: 'gold-title' }, 'ZLATO');
   const sub = h('div', { class: 'gold-sub' }, 'Bez jediné chyby');
   const spot = h('div', { class: 'gold-spot' });
   const stage = h('div', { class: 'gold-stage' }, spot, fig);
-  const tap = h('div', { class: 'gold-tap' }, 'Klepni pro pokračování');
-  const ov = h('div', { class: 'gold-over', role: 'dialog', 'aria-label': 'Zlatý pohárek, bez jediné chyby' }, bg, conf, title, sub, stage, tap);
+  const tap = h('div', { class: 'gold-tap' }, 'Klikni pro přeskočení');
+  const ov = h('div', { class: 'gold-over', role: 'dialog', 'aria-label': 'Zlatý pohárek, bez jediné chyby. Klikni pro přeskočení.' }, bg, bokeh, conf, title, sub, stage, tap);
   document.documentElement.classList.add('gold-lock');
 
-  let landed = false, timer = 0;
+  let landed = false, figReady = false;
   const onKey = e => { if (['Enter', ' ', 'Escape'].includes(e.key)) { e.preventDefault(); land(); } };
-  const cleanupIntro = () => { clearTimeout(timer); document.removeEventListener('keydown', onKey); document.documentElement.classList.remove('gold-lock'); };
+  const cleanupIntro = () => { document.removeEventListener('keydown', onKey); document.documentElement.classList.remove('gold-lock'); };
   ov.addEventListener('click', () => land());
   document.addEventListener('keydown', onKey);
+  fig.style.opacity = '0';
 
-  // vstup: scéna se rozsvítí, postava vyjede zespodu, nápis naskočí
-  const start = () => {
-    if (!ov.isConnected) return cleanupIntro();
-    bg.animate([{ opacity: 0, transform: 'scale(1.15)' }, { opacity: 1, transform: 'none' }], { duration: 500, easing: EASE_OUT });
-    fig.animate([{ opacity: 0, transform: 'translateY(90px) scale(.92)' }, { opacity: 1, transform: 'none' }], { duration: 900, easing: EASE_OUT });
-    spot.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 900, easing: 'ease-out' });
-    title.animate([{ opacity: 0, transform: 'translateY(-14px) scale(.6)' }, { opacity: 1, transform: 'none' }], { duration: 700, delay: 150, easing: EASE_POP, fill: 'backwards' });
-    sub.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: 500, delay: 450, easing: EASE_OUT, fill: 'backwards' });
-    tap.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 600, delay: 1800, fill: 'backwards' });
-    conf.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 800, delay: 200, fill: 'backwards' });
-    timer = setTimeout(land, GOLD_LAND);
-  };
+  // vstup: scéna se rozsvítí, nápis naskočí; postava vyjede, jakmile je animace načtená
+  bg.animate([{ opacity: 0, transform: 'scale(1.15)' }, { opacity: 1, transform: 'none' }], { duration: 600, easing: EASE_OUT });
+  title.animate([{ opacity: 0, transform: 'translateY(-14px) scale(.6)' }, { opacity: 1, transform: 'none' }], { duration: 700, delay: 150, easing: EASE_POP, fill: 'backwards' });
+  sub.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: 500, delay: 450, easing: EASE_OUT, fill: 'backwards' });
+  for (const el of [conf, bokeh]) el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 900, delay: 200, fill: 'backwards' });
+  // nápověda po 2 s, pak jemně dýchá
+  tap.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }], { duration: 600, delay: GOLD_HINT, easing: EASE_OUT, fill: 'backwards' })
+    .finished.then(() => { if (!landed) tap.animate([{ opacity: 1 }, { opacity: .45 }, { opacity: 1 }], { duration: 2200, iterations: Infinity, easing: 'ease-in-out' }); }, () => {});
+  // záře za postavou pulzuje (běží i při omezených animacích, je to jen jas, žádný pohyb)
+  pulse.animate([{ opacity: .55, transform: 'scale(.88)' }, { opacity: 1, transform: calm ? 'scale(.88)' : 'scale(1.08)' }, { opacity: .55, transform: 'scale(.88)' }], { duration: 2600, iterations: Infinity, easing: 'ease-in-out' });
+
+  loadGold().then(b => {
+    if (!b) { slot.remove(); return; }   // animace není k dispozici (offline a ještě nestažená): zůstane jen pohárek uprostřed
+    fig.src = goldSrc();
+    return fig.decode().catch(() => {}).then(() => {
+      figReady = true;
+      fig.style.opacity = '';
+      if (!landed) {
+        fig.animate([{ opacity: 0, transform: 'translateY(90px) scale(.92)' }, { opacity: 1, transform: 'none' }], { duration: 900, easing: EASE_OUT });
+        spot.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 900, easing: 'ease-out' });
+      } else {
+        fig.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 500, easing: 'ease-out' });
+      }
+    });
+  });
 
   function land() {
     if (landed) return;
@@ -748,17 +769,19 @@ function goldIntro(main, tBox, g) {
     cleanupIntro();
     if (!ov.isConnected) return;   // mezitím se odešlo jinam
     const first = fig.getBoundingClientRect();
-    slot.append(fig);                // ten samý obrázek → animace běží dál bez přerušení
-    const last = fig.getBoundingClientRect();
-    const dx = (first.left + first.width / 2) - (last.left + last.width / 2);
-    const dy = (first.top + first.height / 2) - (last.top + last.height / 2);
-    const k = first.height / last.height;
-    fig.classList.add('flying');
-    fig.animate([{ transform: `translate(${dx}px, ${dy}px) scale(${k})` }, { transform: 'none' }], { duration: GOLD_FLY, easing: EASE_IO })
-      .finished.then(() => fig.classList.remove('flying'), () => {});
+    if (slot.isConnected) slot.append(fig);                // ten samý obrázek → animace běží dál bez přerušení
+    if (figReady) {
+      const last = fig.getBoundingClientRect();
+      const dx = (first.left + first.width / 2) - (last.left + last.width / 2);
+      const dy = (first.top + first.height / 2) - (last.top + last.height / 2);
+      const k = first.height / last.height;
+      fig.classList.add('flying');
+      fig.animate([{ transform: `translate(${dx}px, ${dy}px) scale(${k})` }, { transform: 'none' }], { duration: GOLD_FLY, easing: EASE_IO })
+        .finished.then(() => fig.classList.remove('flying'), () => {});
+    }
 
     // scéna se stáhne do místa, kam postava letí, a rozplyne se ve zlaté záři
-    const r = slot.getBoundingClientRect();
+    const r = (slot.isConnected ? slot : cup).getBoundingClientRect();
     const cx = r.left + r.width / 2 - innerWidth / 2, cy = r.top + r.height / 2 - innerHeight / 2;
     bg.animate([
       { transform: 'none', opacity: 1 },
@@ -768,7 +791,10 @@ function goldIntro(main, tBox, g) {
     const away = [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(-28px) scale(.92)' }];
     title.animate(away, { duration: 450, easing: EASE_IO, fill: 'forwards' });
     sub.animate(away, { duration: 400, easing: EASE_IO, fill: 'forwards' });
-    for (const el of [conf, spot, tap]) el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 450, easing: 'ease-out', fill: 'forwards' });
+    for (const el of [conf, bokeh, spot, tap]) {
+      el.getAnimations().forEach(a => a.cancel());
+      el.animate([{ opacity: getComputedStyle(el).opacity }, { opacity: 0 }], { duration: 450, easing: 'ease-out', fill: 'forwards' });
+    }
     setTimeout(() => ov.remove(), GOLD_FLY + 50);
 
     // stránka: záře, lišta, pohárek a nakonec texty a tlačítka
@@ -776,13 +802,11 @@ function goldIntro(main, tBox, g) {
     show(glow, [{ opacity: 0, transform: 'scale(.6)' }, { opacity: 1, transform: 'none' }], { duration: 900, delay: 350, easing: EASE_OUT });
     show(shelf, [{ opacity: 0, transform: 'scaleX(0)' }, { opacity: 1, transform: 'none' }], { duration: 700, delay: 550, easing: EASE_OUT });
     show(cup, [{ opacity: 0, transform: 'translateY(18px) scale(.4) rotate(-14deg)' }, { opacity: 1, transform: 'none' }], { duration: 750, delay: 700, easing: EASE_POP });
-    ring.animate([{ opacity: 0, transform: 'scale(.5)' }, { opacity: .75, transform: 'scale(.75)', offset: .15 }, { opacity: 0, transform: 'scale(1.6)' }], { duration: 850, delay: GOLD_FLY - 140, easing: 'ease-out' });
+    if (figReady) ring.animate([{ opacity: 0, transform: 'scale(.5)' }, { opacity: .75, transform: 'scale(.75)', offset: .15 }, { opacity: 0, transform: 'scale(1.6)' }], { duration: 850, delay: GOLD_FLY - 140, easing: 'ease-out' });
     rev.forEach((el, i) => show(el, [{ opacity: 0, transform: 'translateY(16px)' }, { opacity: 1, transform: 'none' }], { duration: 520, delay: 850 + i * 70, easing: EASE_OUT }));
   }
 
   app.append(ov);
-  // časovač až od chvíle, kdy je obrázek připravený (od té doby jede jeho první kolo)
-  fig.decode().catch(() => {}).then(() => requestAnimationFrame(start));
 }
 
 // ------------------------------------------------------------ procvičování a plynulost

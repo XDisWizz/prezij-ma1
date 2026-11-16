@@ -624,8 +624,14 @@ td.st-minus { color: #d85a30; font-weight: 800; }
 
 .gold-over { position: fixed; inset: 0; z-index: 70; overflow: hidden; cursor: pointer; display: flex; flex-direction: column; align-items: center; -webkit-tap-highlight-color: transparent; }
 .gold-bg { position: absolute; left: 50%; top: 50%; width: 150vmax; height: 150vmax; margin: -75vmax 0 0 -75vmax; border-radius: 50%; overflow: hidden; background: radial-gradient(circle at 50% 54%, #4a3509 0, #1d1507 30%, #0e0b05 62%); will-change: transform, opacity; }
-.gold-rays { position: absolute; inset: 0; background: repeating-conic-gradient(from 0deg at 50% 54%, rgba(255, 214, 102, .15) 0 9deg, rgba(255, 214, 102, 0) 9deg 22deg); -webkit-mask-image: radial-gradient(circle at 50% 54%, #000 8%, transparent 45%); mask-image: radial-gradient(circle at 50% 54%, #000 8%, transparent 45%); animation: goldSpin 24s linear infinite; }
+.gold-rays { position: absolute; inset: 0; background: repeating-conic-gradient(from 0deg at 50% 54%, rgba(255, 214, 102, .17) 0 9deg, rgba(255, 214, 102, 0) 9deg 22deg); -webkit-mask-image: radial-gradient(circle at 50% 54%, #000 8%, transparent 45%); mask-image: radial-gradient(circle at 50% 54%, #000 8%, transparent 45%); transform-origin: 50% 54%; animation: goldSpin 16s linear infinite; }
+/* druhá vrstva paprsků se točí opačně → paprsky se míhají a třpytí */
+.gold-rays2 { background: repeating-conic-gradient(from 4deg at 50% 54%, rgba(255, 236, 170, .1) 0 4deg, rgba(255, 236, 170, 0) 4deg 15deg); animation-duration: 27s; animation-direction: reverse; }
 @keyframes goldSpin { to { transform: rotate(360deg); } }
+.gold-pulse { position: absolute; left: 50%; top: 54%; width: 46vmax; height: 46vmax; margin: -23vmax 0 0 -23vmax; border-radius: 50%; background: radial-gradient(circle, rgba(255, 200, 70, .42), rgba(255, 190, 40, .12) 45%, rgba(255, 190, 40, 0) 70%); }
+.gold-bokeh { position: absolute; inset: 0; pointer-events: none; }
+.gold-bokeh i { position: absolute; bottom: -30px; left: var(--x); width: var(--z); height: var(--z); border-radius: 50%; background: radial-gradient(circle, #fff3c4, #f5b800 55%, rgba(245, 184, 0, 0) 72%); opacity: 0; filter: blur(1px); animation: goldRise var(--d) var(--w) linear infinite; }
+@keyframes goldRise { 0% { transform: translate(0, 0); opacity: 0; } 15% { opacity: var(--o); } 85% { opacity: var(--o); } 100% { transform: translate(var(--sx), calc(-100vh - 60px)); opacity: 0; } }
 .gold-conf { position: absolute; inset: 0; pointer-events: none; }
 .gold-conf span { position: absolute; top: -40px; left: var(--x); color: var(--c); font: 700 var(--s)/1 'Cambria Math', 'STIX Two Math', serif; animation: goldFall var(--d) var(--w) linear infinite; will-change: transform; }
 @keyframes goldFall { to { transform: translateY(calc(100vh + 80px)) rotate(var(--r)); } }
