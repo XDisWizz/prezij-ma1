@@ -22,6 +22,8 @@ import { DECK as DECK3 } from './limity/hlava.js';
 import { DECK as DECK4 } from './prubeh/hlava.js';
 import { DECK as DECK5 } from './integraly/hlava.js';
 import { buildRound, memoryOf, dueCount, dueInDays, TOP } from './zhlavy.js';
+import * as hx from './haptics.js';
+const { haptic, hapticSeq, hapticStop, streakFx, sparkle, ramp } = hx;
 
 const GEN = { ...GEN0, ...GONIO_GEN };
 
@@ -220,6 +222,7 @@ function modal(title, body, actions) {
   if (document.querySelector('.modal-back')) return;   // už jeden otevřený je (opakovaný Esc)
   const back = h('div', { class: 'modal-back' });
   const close = () => back.remove();
+  haptic('pop', { delay: 30 });
   back.append(h('div', { class: 'modal', role: 'dialog' }, h('h3', {}, title), h('p', { html: body }),
     h('div', { class: 'modal-actions' }, actions.map(a => h('button', { class: 'btn ' + (a.primary ? 'btn-primary' : 'btn-ghost'), onclick: () => { close(); a.fn && a.fn(); } }, a.label)))));
   document.body.append(back);
@@ -245,6 +248,7 @@ function openSheet(title, sections, state) {
     h('div', { class: 'sheet-head' }, h('h3', {}, title), h('button', { class: 'icon-btn', 'aria-label': 'Zavřít tahák', onclick: close, html: ICONS.close })), body));
   back.addEventListener('click', e => { if (e.target === back) close(); });
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  haptic('pop', { delay: 40 });
   document.body.append(back);
 }
 
@@ -363,7 +367,7 @@ function pathScreen(id) {
       const tag = l.drill ? h('span', { class: 'tag tag-drill' }, 'DRIL') : l.boss ? h('span', { class: 'tag tag-boss' }, 'SÉRIE') : null;
       const item = h('button', {
         class: `item item-${st}${l.boss ? ' item-boss' : ''}${isDone ? ' tier-' + tier : ''}`, type: 'button',
-        onclick: () => (open ? go('#/lekce/' + l.id) : toast('Tahle lekce se odemkne po té předchozí.')),
+        onclick: () => (open ? go('#/lekce/' + l.id) : (haptic('nope'), toast('Tahle lekce se odemkne po té předchozí.'))),
       },
         h('span', { class: 'tile', html: icon }),
         h('span', { class: 'meta' }, h('b', {}, l.title), h('span', {}, meta)),
@@ -425,6 +429,14 @@ function loadLessonSave(key, pool) {
   } catch { return null; }
 }
 const clearLessonSave = () => { try { localStorage.removeItem(LESSON_KEY); } catch { /* nevadí */ } };
+
+/** haptika k odpovědi: správně / špatně / Nevím, na milnících série navíc rostoucí vlna */
+function answerFx(ok, dontKnow, row) {
+  if (!ok) return haptic(dontKnow ? 'soft' : 'error');
+  haptic('success');
+  const s = streakFx(row);
+  if (s) haptic(s, { delay: 200 });
+}
 
 /** resumeKey + pool: když jsou zadané, lekce se dá po obnovení stránky dokončit */
 function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, cheat, resumeKey, pool }) {
@@ -498,6 +510,7 @@ function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, 
     if (item.tries > 0) cur.el.prepend(h('div', { class: 'repeat-tag', html: ICONS.repeat + '<span>Opakování po chybě</span>' }));
     stage.scrollTop = 0;
     cur.el.classList.add('enter');
+    haptic('enter', { delay: 230 });   // karta dojede na místo (slidein .28 s)
     foot.className = 'lesson-foot';
     if (cur.passive) {
       foot.replaceChildren(h('div', { class: 'foot-row' }, h('span'), h('button', { class: 'btn btn-primary', onclick: next }, 'Pokračovat')));
@@ -512,6 +525,7 @@ function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, 
   }
   function showHint() {
     item().hinted = true;
+    haptic('pop');
     cur.el.append(h('div', { class: 'hint', html: ICONS.bulb + `<span>${m(cardData.hint)}</span>` }));
   }
   const item = () => queue[idx];
@@ -527,8 +541,8 @@ function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, 
   function check() {
     if (phase !== 'answer') return;
     const r = cur.check();
-    if (r.invalid) return toast(r.invalid);
-    if (r.stepDone) return;              // řešení po krocích: jen se otevřel další krok
+    if (r.invalid) { haptic('nope'); return toast(r.invalid); }
+    if (r.stepDone) { haptic(r.ok ? 'step' : 'stepSoft'); return; }   // řešení po krocích: jen se otevřel další krok
     const dt = (performance.now() - cardT0) / 1000;
     const it = item();
     store.record(weakKey(cardData.key), r.ok, dt);
@@ -542,7 +556,7 @@ function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, 
   function dontKnow() {
     if (phase !== 'answer') return;
     const r = cur.reveal();
-    if (r.stepDone) return;
+    if (r.stepDone) { haptic('stepSoft'); return; }
     if (drill) { row = 0; setRow(); }
     store.record(weakKey(cardData.key), false, (performance.now() - cardT0) / 1000);
     attemptLog.push({ ok: false, t: 0 });
@@ -553,6 +567,7 @@ function runLesson({ factories, title, back, mode = 'lesson', onFinish, pathId, 
 
   function feedback(ok, r) {
     phase = 'feedback';
+    answerFx(ok, r.dontKnow, drill ? row : 0);
     saveProgress(idx + 1);   // odpověď už je započtená → po obnovení se pokračuje další úlohou
     setRep(idx + 1);
     const parts = [];
@@ -689,6 +704,13 @@ function endScreen({ title, sub, acc, time, exercises, mistakes = 0, res, back, 
   app.replaceChildren(main);
   window.scrollTo(0, 0);
   if (gold?.intro) goldIntro(main, tBox, gold);
+  else {
+    // haptika sladěná s animacemi konce: pohárek přiletí (trophyIn), jinak hvězda (pop)
+    if (trophy && trophy.now > trophy.before) haptic('trophyIn');
+    else if (trophy) haptic(trophy.now >= 2 ? 'silver' : 'bronze', { delay: 120 });
+    else haptic('complete');
+    if (res && res.streakUp) haptic('streakUp', { delay: 1100 });
+  }
 }
 
 // ------------------------------------------------------------ zlatý pohárek: tanec
@@ -757,6 +779,13 @@ function goldIntro(main, tBox, g) {
   document.addEventListener('keydown', onKey);
   fig.style.opacity = '0';
 
+  // haptika: fanfára s nápisem, třpyt konfet, pak tep v rytmu pulzující záře (vrchol v půlce 2,6 s)
+  hapticSeq([[150, 'fanfare']]);
+  setTimeout(() => { if (!landed && ov.isConnected) sparkle(520, 1.2); }, 700);
+  let beats = 0;
+  const beat = () => { if (landed || !ov.isConnected || beats++ >= 8) return; haptic('heartbeat'); beatT = setTimeout(beat, 2600); };
+  let beatT = setTimeout(beat, 1300);
+
   // vstup: scéna se rozsvítí, nápis naskočí; postava vyjede, jakmile je animace načtená
   bg.animate([{ opacity: 0, transform: 'scale(1.15)' }, { opacity: 1, transform: 'none' }], { duration: 600, easing: EASE_OUT });
   title.animate([{ opacity: 0, transform: 'translateY(-14px) scale(.6)' }, { opacity: 1, transform: 'none' }], { duration: 700, delay: 150, easing: EASE_POP, fill: 'backwards' });
@@ -786,8 +815,11 @@ function goldIntro(main, tBox, g) {
   function land() {
     if (landed) return;
     landed = true;
+    clearTimeout(beatT);
     cleanupIntro();
     if (!ov.isConnected) return;   // mezitím se odešlo jinam
+    hapticStop();
+    ramp(GOLD_FLY, 'land');        // přelet: zrychlující cvakání, buch při dosednutí
     const first = fig.getBoundingClientRect();
     if (slot.isConnected) slot.append(fig);                // ten samý obrázek → animace běží dál bez přerušení
     if (figReady) {
@@ -901,11 +933,9 @@ function pocketInfo(scope) {
 const skillWord = n => (n === 1 ? 'dovednost' : n >= 2 && n <= 4 ? 'dovednosti' : 'dovedností');
 const pocketSub = pi => (!pi.skills.length ? 'odemkne se po první lekci' : pi.due ? `${pi.due} ${skillWord(pi.due)} k osvěžení` : 'dnes je osvěženo vše');
 function openPocket(scope) {
-  if (!pocketSkills(scope).length) return toast('Režim Z hlavy se odemkne po první dokončené lekci.');
+  if (!pocketSkills(scope).length) { haptic('nope'); return toast('Režim Z hlavy se odemkne po první dokončené lekci.'); }
   go('#/zhlavy/' + scope);
 }
-const buzz = ok => { if (navigator.vibrate && coarsePointer()) try { navigator.vibrate(ok ? 12 : [18, 50, 18]); } catch { /* nevadí */ } };
-const coarsePointer = () => window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
 
 function pocketScreen(scope) {
   const path = PATHS.find(p => p.id === scope);
@@ -970,6 +1000,7 @@ function pocketScreen(scope) {
     fitMath(cur.el);
     window.scrollTo(0, 0);
     cur.el.classList.add('enter');
+    haptic('enter', { delay: 230 });
     foot.className = 'lesson-foot pk-foot';
     foot.replaceChildren(h('div', { class: 'foot-row' },
       h('button', { class: 'btn btn-ghost btn-small', onclick: dontKnow }, 'Nevím'),
@@ -1005,7 +1036,7 @@ function pocketScreen(scope) {
     row = ok ? row + 1 : 0;
     bestRow = Math.max(bestRow, row);
     setRow();
-    buzz(ok);
+    answerFx(ok, r.dontKnow, row);
     const title = r.dontKnow ? 'V pohodě, takhle to je:' : ok ? pick(PRAISE) : pick(SOFT);
     const head = h('div', { class: 'fb-title', html: (ok ? ICONS.check : ICONS.bulb) + `<span>${title}</span>` });
     foot.className = 'lesson-foot pk-foot fb ' + (ok ? 'fb-ok' : 'fb-soft');
@@ -1175,6 +1206,15 @@ function settingsScreen() {
     h('label', { class: 'setting' },
       h('input', { type: 'checkbox', checked: st.pocketManual || null, onchange: e => store.set({ pocketManual: e.target.checked }) }),
       h('span', {}, h('b', {}, 'Z hlavy: nepokračovat samo'), h('span', { class: 'muted small' }, 'Po správné odpovědi počká na tlačítko Pokračovat a ukáže vysvětlení.'))),
+    h('label', { class: 'setting' + (hx.support ? '' : ' setting-off') },
+      h('input', { type: 'checkbox', 'data-hx': 'own', checked: (hx.support && st.haptics !== false) || null, disabled: !hx.support || null, onchange: e => {
+        store.set({ haptics: e.target.checked });
+        if (e.target.checked) hx.haptic('success');
+      } }),
+      h('span', {}, h('b', {}, 'Haptika'), h('span', { class: 'muted small' },
+        hx.support === 'full' ? 'Jemné vibrace při ťukání, odpovědích a animacích.'
+          : hx.support === 'ticks' ? 'Jemná cvaknutí při ťukání a odpovědích. Na iPhonu to jde od iOS 18, plné vibrace Safari nepovoluje.'
+            : 'Tohle zařízení vibrace nepodporuje. Haptiku poznáš v telefonu.'))),
     h('div', { class: 'setting-block' },
       h('b', {}, sync.configured ? 'Záloha do souboru' : 'Přenést pokrok na jiné zařízení'),
       h('p', { class: 'muted small' }, sync.configured ? 'Bez účtu: stáhni si pokrok do souboru a na druhém zařízení ho nahraj.' : 'Pokrok se ukládá jen v tomhle prohlížeči. Stáhni si ho do souboru a na druhém zařízení ho nahraj.'),
@@ -1196,6 +1236,7 @@ function settingsScreen() {
 // ------------------------------------------------------------ router
 function route() {
   if (cleanup) { cleanup(); cleanup = null; }
+  hx.hapticCancelScheduled();   // naplánovaná haptika patří obrazovce, ze které se odchází
   document.querySelectorAll('.modal-back,.toast').forEach(x => x.remove());
   const hash = location.hash.replace(/\?.*$/, '') || '#/';
   const parts = hash.slice(2).split('/');

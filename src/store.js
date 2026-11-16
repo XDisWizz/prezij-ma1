@@ -102,7 +102,7 @@ export const store = {
     save();
   },
   /** smaže pokrok; novější epocha zajistí, že ho synchronizace nevrátí z jiného zařízení */
-  reset() { const keep = { theme: state.theme, pocketManual: state.pocketManual }; state = { ...blank(), ...keep, epoch: Date.now() }; save(); },
+  reset() { const keep = { theme: state.theme, pocketManual: state.pocketManual, haptics: state.haptics }; state = { ...blank(), ...keep, epoch: Date.now() }; save(); },
   /** synchronizace: část stavu, která jde na server */
   syncData: () => syncSubset(state),
   /** synchronizace: přepíše synchronizované položky sloučenými daty (bez upozornění posluchačů) */

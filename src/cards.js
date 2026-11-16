@@ -4,6 +4,7 @@ import { mathField } from './mathfield.js';
 import { parseSet, PARSE_ERRORS, equal, sameEndpoints, complement, subset, normalize, toTex, toTexBoth, endpoints } from './intervals.js';
 import { numberLine } from './numberline.js';
 import * as S from './sym.js';
+import { haptic } from './haptics.js';
 
 const coarse = () => window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
 
@@ -192,7 +193,7 @@ function makeIntervalInput(label) {
   const move = d => { const [s, e] = sel(); caret(Math.max(0, Math.min(input.value.length, (d < 0 ? Math.min(s, e) : Math.max(s, e)) + (s === e ? d : 0)))); };
   const run = k => k === 'back' ? back() : k === 'left' ? move(-1) : k === 'right' ? move(1) : insert(k);
   // reakce hned na dotyk (ne až na puštění), ⌫ a šipky při podržení opakují
-  const pad = h('div', { class: 'keypad' }, KEYS.map(([label, ins = label, cls = 'num']) => {
+  const pad = h('div', { class: 'keypad', 'data-hx': 'own' }, KEYS.map(([label, ins = label, cls = 'num']) => {
     let hold = null;
     const stop = () => { clearTimeout(hold); clearInterval(hold); hold = null; btn.classList.remove('down'); };
     const btn = h('button', {
@@ -201,9 +202,9 @@ function makeIntervalInput(label) {
         if (e.button > 0) return;
         e.preventDefault();
         btn.classList.add('down');
-        if (e.isTrusted && navigator.vibrate && coarse()) try { navigator.vibrate(5); } catch {}
+        if (e.isTrusted) haptic('key');
         run(ins);
-        if (cls === 'act') hold = setTimeout(() => { hold = setInterval(() => run(ins), 60); }, 380);
+        if (cls === 'act') hold = setTimeout(() => { hold = setInterval(() => { haptic('keyRepeat', { light: true }); run(ins); }, 60); }, 380);
       },
       onpointerup: stop, onpointerleave: stop, onpointercancel: stop,
       onclick: e => { if (e.detail === 0) run(ins); }, // Enter/mezerník z klávesnice
@@ -594,7 +595,7 @@ function swipeCard(card, { instant } = {}) {
     ctx ? h('div', { class: 'sw-show', html: m(`$$${ctx}$$`) }) : null,
     card.show ? h('div', { class: 'sw-show', html: m(card.show) }) : null);
   const mk = side => h('button', { class: `sw-btn sw-btn-${side[0]}`, type: 'button', onclick: () => choose(side) },
-    h('span', { class: 'sw-arrow', 'aria-hidden': 'true' }, side === 'left' ? '←' : '→'), h('span', { class: 'sw-label', html: m(card[side]) }));
+    h('span', { class: 'sw-label', html: m(card[side]) }));
   const bL = mk('left'), bR = mk('right');
   const btns = h('div', { class: 'sw-btns' }, bL, bR);
   const el = h('div', { class: 'card sw' }, face, btns);
@@ -615,7 +616,7 @@ function swipeCard(card, { instant } = {}) {
   }
   // tažení: jen vodorovně (svislé posouvání stránky zůstává prohlížeči)
   let drag = null;
-  face.addEventListener('pointerdown', e => { if (locked || e.button > 0) return; drag = { x: e.clientX, y: e.clientY, on: false, id: e.pointerId }; });
+  face.addEventListener('pointerdown', e => { if (locked || e.button > 0) return; drag = { x: e.clientX, y: e.clientY, on: false, id: e.pointerId, notch: 0, over: false }; });
   face.addEventListener('pointermove', e => {
     if (!drag || e.pointerId !== drag.id) return;
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
@@ -625,6 +626,11 @@ function swipeCard(card, { instant } = {}) {
       try { face.setPointerCapture(e.pointerId); } catch { /* nevadí */ }
     }
     place(dx, false);
+    // haptika: jemná „textura“ každých 22 px a výrazné cvaknutí za hranou, kde se puštěním odpoví
+    const over = Math.abs(dx) > 64, notch = Math.trunc(dx / 22);
+    if (over !== drag.over) { drag.over = over; haptic(over ? 'detent' : 'undetent'); }
+    else if (notch !== drag.notch && !over) haptic('tick', { light: true });
+    drag.notch = notch;
   });
   const end = e => {
     if (!drag || e.pointerId !== drag.id) return;
