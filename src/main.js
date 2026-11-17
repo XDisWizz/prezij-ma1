@@ -741,7 +741,42 @@ function loadGold() {
   if (goldBlob) return Promise.resolve(goldBlob);
   return goldReq ||= fetch(GOLD_SRC).then(r => (r.ok ? r.blob() : null)).then(b => (goldBlob = b), () => null).finally(() => { goldReq = null; });
 }
-const preloadGold = () => { loadGold(); };
+// zvuky zlata: „tanec“ hraje jednou od začátku ve chvíli, kdy se objeví postava,
+// „záblesk“ ve chvíli, kdy postava dosedne vedle pohárku a kolem ní blikne zlatý kruh
+const GOLD_SNDS = { tanec: 'media/zlato.mp3', zablesk: 'media/zablesk.mp3' };
+const goldAudios = {};
+function goldSound(key) {
+  if (goldAudios[key]) return goldAudios[key];
+  try { const a = new Audio(GOLD_SNDS[key]); a.preload = 'auto'; goldAudios[key] = a; } catch { return null; }
+  return goldAudios[key];
+}
+// iOS/Safari pustí zvuk jen z přehrávače, který jednou hrál při dotyku → při prvním klepnutí ho potichu „odemkneme“
+const goldUnlocked = {};
+function unlockGoldSounds() {
+  for (const key of Object.keys(GOLD_SNDS)) {
+    if (goldUnlocked[key]) continue;
+    const a = goldSound(key);
+    if (!a) continue;
+    goldUnlocked[key] = true;
+    a.muted = true;
+    const p = a.play();
+    const reset = () => { if (a.muted) { a.pause(); a.currentTime = 0; a.muted = false; } };
+    if (p && p.then) p.then(reset, () => { a.muted = false; goldUnlocked[key] = false; }); else reset();
+  }
+}
+for (const ev of ['pointerdown', 'keydown']) document.addEventListener(ev, unlockGoldSounds, { capture: true, passive: true });
+/** přehraje zvuk jednou od začátku; odejde-li se z obrazovky (el už není na stránce), zvuk utichne */
+function playGoldSound(key, el) {
+  const a = goldSound(key);
+  if (!a) return;
+  a.muted = false;
+  a.currentTime = 0;
+  a.ontimeupdate = () => { if (!el.isConnected) a.pause(); };
+  a.onended = () => { a.ontimeupdate = null; };
+  const p = a.play();
+  if (p && p.catch) p.catch(() => {});
+}
+const preloadGold = () => { loadGold(); for (const key of Object.keys(GOLD_SNDS)) goldSound(key); };
 /** pokaždé nová adresa → animace jede od prvního snímku (stejná adresa by navázala na už běžící kolo) */
 function goldSrc() {
   if (goldUrl) URL.revokeObjectURL(goldUrl);
@@ -818,6 +853,7 @@ function goldIntro(main, tBox, g) {
     return fig.decode().catch(() => {}).then(() => {
       figReady = true;
       fig.style.opacity = '';
+      if (fig.isConnected) playGoldSound('tanec', fig);
       if (!landed) {
         fig.animate([{ opacity: 0, transform: 'translateY(90px) scale(.92)' }, { opacity: 1, transform: 'none' }], { duration: 900, easing: EASE_OUT });
         spot.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 900, easing: 'ease-out' });
@@ -869,6 +905,7 @@ function goldIntro(main, tBox, g) {
     show(glow, [{ opacity: 0, transform: 'scale(.6)' }, { opacity: 1, transform: 'none' }], { duration: 900, delay: 350, easing: EASE_OUT });
     show(shelf, [{ opacity: 0, transform: 'scaleX(0)' }, { opacity: 1, transform: 'none' }], { duration: 700, delay: 550, easing: EASE_OUT });
     show(cup, [{ opacity: 0, transform: 'translateY(18px) scale(.4) rotate(-14deg)' }, { opacity: 1, transform: 'none' }], { duration: 750, delay: 700, easing: EASE_POP });
+    if (figReady) setTimeout(() => { if (slot.isConnected) playGoldSound('zablesk', slot); }, GOLD_FLY - 140);   // zvuk záblesku se startem kruhu
     if (figReady) ring.animate([{ opacity: 0, transform: 'scale(.5)' }, { opacity: .75, transform: 'scale(.75)', offset: .15 }, { opacity: 0, transform: 'scale(1.6)' }], { duration: 850, delay: GOLD_FLY - 140, easing: 'ease-out' });
     rev.forEach((el, i) => show(el, [{ opacity: 0, transform: 'translateY(16px)' }, { opacity: 1, transform: 'none' }], { duration: 520, delay: 850 + i * 70, easing: EASE_OUT }));
   }
@@ -953,10 +990,11 @@ function pocketInfo(scope) {
 // „Karta“ = jeden druh rozhodnutí (v kódu skill / dovednost); čísla v ní jsou pokaždé jiná.
 const cardWord = n => (n === 1 ? 'karta' : n >= 2 && n <= 4 ? 'karty' : 'karet');
 const newCards = n => (n === 1 ? '1 nová karta' : n >= 2 && n <= 4 ? `${n} nové karty` : `${n} nových karet`);
+const unseenCards = n => (n === 1 ? '1 neobjevená karta' : n >= 2 && n <= 4 ? `${n} neobjevené karty` : `${n} neobjevených karet`);
 function pocketSub(pi) {
   if (!pi.skills.length) return 'odemkne se po první lekci';
-  if (pi.fresh && pi.due) return `${newCards(pi.fresh)}, ${pi.due} k osvěžení`;
-  if (pi.fresh) return newCards(pi.fresh);
+  if (pi.fresh && pi.due) return `${unseenCards(pi.fresh)}, ${pi.due} k osvěžení`;
+  if (pi.fresh) return unseenCards(pi.fresh);
   return pi.due ? `${pi.due} ${cardWord(pi.due)} k osvěžení` : 'dnes je osvěženo vše';
 }
 /** karty, které odemkne dokončení dané lekce */
