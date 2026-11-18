@@ -88,7 +88,8 @@ function countTiers(items) {
   c.earned = c.gold + c.silver + c.bronze;
   return c;
 }
-const trophyCounts = () => countTiers(PATHS.filter(p => p.content).flatMap(pathTrophies));
+// pohárky se počítají vždy jen za aktuální předmět (MA1 / Základy)
+const trophyCounts = () => countTiers(PATHS.filter(p => p.content && p.course === course()).flatMap(pathTrophies));
 
 // ------------------------------------------------------------ světlý / tmavý režim
 const systemDark = () => window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -370,6 +371,13 @@ function pickCourse(id) {
   setWallpaper(id);
   if (location.hash && location.hash !== '#/') go('#/'); else route();
 }
+/** obrazovka patří jinému předmětu (třeba odkaz z výsledků testu) → přepnout motiv, logo i pohárky na něj */
+function ensureCourse(id) {
+  if (!id || id === course()) return;
+  store.set({ course: id });
+  applyTheme();
+  setWallpaper(id);
+}
 const courseNote = () => h('p', { class: 'muted small course-note' }, 'Test: 6 příkladů, 30 bodů. Každá cesta odpovídá jednomu typu příkladu (štítek „Př.“), simulace testu ukáže, jak na tom teď jsi.');
 const testRuns = v => store.get().fluency.filter(f => f.path === 'zm-test-' + v);
 const bestRun = runs => runs.slice().sort((a, b) => b.correct - a.correct || a.time - b.time)[0];
@@ -403,6 +411,7 @@ function lessonStats(l) {
 function pathScreen(id) {
   const p = PATHS.find(x => x.id === id);
   if (!p || !p.content) return go('#/');
+  ensureCourse(p.course);
   const all = lessonsOf(p.content);
   const done = all.filter(l => store.isDone(l.id)).length;
   const main = h('main', { class: 'page path-page' });
@@ -707,6 +716,7 @@ function lessonScreen(id) {
   const f = findLesson(id);
   if (!f) return go('#/');
   const { path, lesson, index, all } = f;
+  ensureCourse(path.course);
   if (!unlocked(all, index)) return go('#/cesta/' + path.id);
   const back = '#/cesta/' + path.id;
   preloadGold();
@@ -1265,6 +1275,7 @@ const fmtDate = t => new Date(t).toLocaleDateString('cs-CZ', { day: 'numeric', m
 let testWrong = [];   // úlohy, ve kterých se v posledním testu ztratily body (pro „Procvičit chyby“)
 
 function testHome() {
+  ensureCourse('zm');
   const main = h('main', { class: 'page test-home' });
   main.append(h('section', { class: 'test-hero' },
     h('h1', {}, 'Simulace testu'),
@@ -1292,6 +1303,7 @@ function testHome() {
 }
 
 function testRun(v) {
+  ensureCourse('zm');
   if (v === 'chyby') return testPractice();
   const V = VARIANTS[v];
   if (!V) return go('#/test');
@@ -1448,14 +1460,15 @@ function testPractice() {
 
 // ------------------------------------------------------------ sbírka pohárků
 function collectionScreen(focus) {
-  const paths = PATHS.filter(p => p.content);
+  ensureCourse(PATHS.find(p => p.id === focus)?.course);
+  const paths = PATHS.filter(p => p.content && p.course === course());
   const all = paths.flatMap(pathTrophies);
   const c = countTiers(all);
   const main = h('main', { class: 'page collection' });
   main.append(h('section', { class: 'coll-hero' },
     h('div', { class: 'coll-hero-icon', html: trophySvg(3, 112) }),
     h('div', { class: 'coll-hero-text' },
-      h('small', {}, 'POSBÍREJ JE VŠECHNY!'),
+      h('small', {}, `${COURSES[course()].title.toUpperCase()} · POSBÍREJ JE VŠECHNY!`),
       h('h1', {}, `${c.gold} z ${c.total} zlatých`),
       h('div', { class: 'bar' }, h('div', { class: 'bar-fill gold-fill', style: `width:${100 * c.gold / c.total}%` })),
       h('p', { class: 'muted small' }, `Celkem máš ${c.earned} z ${c.total} pohárků, zbývá získat ${c.total - c.earned}.`))));
@@ -1468,9 +1481,8 @@ function collectionScreen(focus) {
       h('li', { html: trophySvg(3, 24) + '<span><b>Zlato</b>: celá lekce bez jediné chyby.</span>' })),
     h('p', { class: 'muted small' }, 'Chyba je špatná odpověď, „Nevím“ i příklad vyřešený s nápovědou. Počítají se i chyby v opakováních na konci lekce: příklad, ve kterém chybuješ, se vrací s jinými čísly, dokud ho nevyřešíš (nejvýš 4×).'),
     h('p', { class: 'muted small' }, 'Lekci můžeš opakovat kolikrát chceš, počítá se nejlepší pokus. Pohárek se nikdy nezhorší.')));
-  let target = null, lastCourse = null;
+  let target = null;
   for (const p of paths) {
-    if (p.course !== lastCourse) { lastCourse = p.course; main.append(h('h2', { class: 'coll-course' }, COURSES[p.course].title)); }
     const items = pathTrophies(p);
     const pc = countTiers(items);
     const grid = h('div', { class: 'trophy-grid' }, items.map(t => h('button', {
@@ -1486,7 +1498,7 @@ function collectionScreen(focus) {
     if (focus === p.id) target = sec;
     main.append(sec);
   }
-  app.replaceChildren(topbar('#/', 'Sbírka pohárků'), main);
+  app.replaceChildren(topbar('#/', `Sbírka pohárků · ${COURSES[course()].short}`), main);
   if (target) setTimeout(() => target.scrollIntoView({ block: 'start', behavior: 'smooth' }), 60);
 }
 

@@ -872,10 +872,7 @@ body { transition: background-color .35s ease; }
 /* tapeta: symboly předmětu, pomalu plují šikmo; jen na hlavních stránkách, nikdy v lekci */
 .wall { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; display: none; }
 :root[data-wall="on"] .wall { display: block; }
-.wall svg { position: absolute; display: block; will-change: transform; animation: wall-drift var(--wall-dur, 90s) linear infinite; }
-.wall text { fill: var(--wall-ink); font-family: 'Cambria Math', 'STIX Two Math', 'Times New Roman', serif; }
-@keyframes wall-drift { to { transform: translate(var(--wall-dx), var(--wall-dy)); } }
-@media (prefers-reduced-motion: reduce) { .wall svg { animation: none; } }
+.wall canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .wall { transition: opacity .35s ease; }
 .wall.fade { opacity: 0; }
 
