@@ -5,6 +5,7 @@ import { parseSet, PARSE_ERRORS, equal, sameEndpoints, complement, subset, norma
 import { numberLine } from './numberline.js';
 import * as S from './sym.js';
 import { haptic } from './haptics.js';
+import { formCard, formStep } from './zm/form.js';
 
 const coarse = () => window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
 
@@ -517,6 +518,7 @@ function guidedCard(card) {
     else if (st.kind === 'integral') { ctl = makeExprInput(st.label || '$=$', { integral: true }); ctl.kind = 'integral'; body.append(ctl.box); setTimeout(ctl.focus, 40); }
     else if (st.kind === 'points') { ctl = makeExprInput(st.label || '$x =$', { numeric: true, points: true }); ctl.kind = 'points'; body.append(ctl.box); setTimeout(ctl.focus, 40); }
     else if (st.kind === 'limit') { ctl = makeExprInput(st.label || '', { numeric: true, limit: true }); ctl.kind = 'limit'; body.append(ctl.box); setTimeout(ctl.focus, 40); }
+    else if (st.kind === 'form') { ctl = formStep(st); ctl.kind = 'form'; body.append(ctl.box); setTimeout(ctl.focus, 40); }
     else { ctl = makeOptions(st.options, st.kind === 'multi'); ctl.kind = st.kind; body.append(ctl.el); }
     list.append(blk);
     blocks[i] = blk;
@@ -524,6 +526,7 @@ function guidedCard(card) {
   }
   function judge(reveal) {
     const st = steps[si];
+    if (ctl.kind === 'form') return ctl.judge(reveal);
     if (ctl.kind === 'interval') {
       if (reveal) { ctl.done(); return { ok: false, note: `Správně: $${toTexBoth(st.answer)}$${numberLine(st.answer)}${st.why ? `<div>${st.why}</div>` : ''}` }; }
       const r = judgeInterval(ctl, st.answer, st.loose);
@@ -575,7 +578,7 @@ function guidedCard(card) {
   open(0);
   return {
     el: h('div', { class: 'card' }, header(card), list),
-    get typing() { return ctl && ['interval', 'expr', 'limit', 'points', 'integral'].includes(ctl.kind); },
+    get typing() { return ctl && ['interval', 'expr', 'limit', 'points', 'integral', 'form'].includes(ctl.kind); },
     focus: () => ctl && ctl.focus && ctl.focus(),
     key: k => ctl && ctl.key && ctl.key(k),
     check: () => step(false),
@@ -682,6 +685,7 @@ export function renderCard(card, opts) {
     case 'limit': return limitCard(card);
     case 'points': return pointsCard(card);
     case 'integral': return integralCard(card);
+    case 'zform': return formCard(card);
     default: throw new Error('Neznámý typ karty ' + card.type);
   }
 }
