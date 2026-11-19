@@ -10,9 +10,12 @@ const FLUENCY_PER_PATH = 10;   // posledních 10 pokusů na cestu + vždy ten ne
 const MAX_LESSONS = 2000;
 const MAX_WEAK = 500;
 const MAX_MEM = 600;
+const PIS_KEEP = 8;            // zápočtová zkouška: posledních 8 výsledků na typ příkladu (stejně jako v main.js)
+const PIS_KEY = /^[1-9]$/;
 const ID = /^[\w.:\/-]{1,80}$/;
 
-const num = (x, lo = 0, hi = 1e12) => (typeof x === 'number' && Number.isFinite(x) && x >= lo && x <= hi ? x : undefined);
+// horní mez 1e13: časová razítka v ms jsou dnes ~1,76·10¹² (dřív tu bylo 1e12 a všechna data s časem ze serveru se zahazovala)
+const num = (x, lo = 0, hi = 1e13) => (typeof x === 'number' && Number.isFinite(x) && x >= lo && x <= hi ? x : undefined);
 const isObj = x => x != null && typeof x === 'object' && !Array.isArray(x);
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -28,7 +31,35 @@ export function syncSubset(s) {
     weakAt: s.weakAt || 0,
     fluency: trimFluency(s.fluency || []),
     mem: s.mem || {},
+    pisStats: cleanPis(s.pisStats),
   };
+}
+
+/** zápočtová zkouška: připravenost po typech příkladů { '1': [{ d, f }], … } (f = podíl bodů 0–1) */
+function cleanPis(raw) {
+  const out = {};
+  if (!isObj(raw)) return out;
+  for (const [k, arr] of Object.entries(raw).slice(0, 20)) {
+    if (!PIS_KEY.test(k) || !Array.isArray(arr)) continue;
+    const list = [];
+    for (const e of arr.slice(-50)) {
+      if (!isObj(e)) continue;
+      const d = num(e.d), f = num(e.f, 0, 1);
+      if (d === undefined || f === undefined) continue;
+      list.push({ d, f: r3(f) });
+    }
+    if (list.length) out[k] = list.sort((a, b) => a.d - b.d).slice(-PIS_KEEP);
+  }
+  return out;
+}
+/** sjednocení výsledků z obou zařízení (bez duplicit podle času), posledních PIS_KEEP na typ */
+function mergePis(a, b) {
+  const out = {};
+  for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
+    const seen = new Set();
+    out[k] = [...(a[k] || []), ...(b[k] || [])].filter(e => (seen.has(e.d) ? false : seen.add(e.d))).sort((x, y) => x.d - y.d).slice(-PIS_KEEP);
+  }
+  return out;
 }
 
 /** režim Z hlavy: jen záznamy správného tvaru */
@@ -63,6 +94,7 @@ export function sanitize(raw) {
     weakAt: num(r.weakAt) ?? 0,
     fluency: [],
     mem: cleanMem(r.mem),
+    pisStats: cleanPis(r.pisStats),
   };
   if (isObj(r.streak)) {
     out.streak.count = Math.floor(num(r.streak.count, 0, 1e5) ?? 0);
@@ -187,6 +219,7 @@ export function merge(local, remote) {
     weakAt: weakNewer.weakAt || 0,
     fluency: trimFluency(fluency),
     mem: mergeMem(cleanMem(l.mem), r.mem || {}),
+    pisStats: mergePis(l.pisStats || {}, r.pisStats || {}),
   };
 }
 
