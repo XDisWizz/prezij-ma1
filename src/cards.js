@@ -6,6 +6,7 @@ import { numberLine } from './numberline.js';
 import * as S from './sym.js';
 import { haptic } from './haptics.js';
 import { formCard, formStep } from './zm/form.js';
+import { tfCard } from './pisemka/tfcard.js';
 
 const coarse = () => window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
 
@@ -686,6 +687,7 @@ export function renderCard(card, opts) {
     case 'points': return pointsCard(card);
     case 'integral': return integralCard(card);
     case 'zform': return formCard(card);
+    case 'tf5': return tfCard(card);
     default: throw new Error('Neznámý typ karty ' + card.type);
   }
 }

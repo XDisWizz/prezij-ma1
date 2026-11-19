@@ -894,3 +894,104 @@ body { transition: background-color .35s ease; }
 .cm-item .cm-check { width: 22px; height: 22px; flex: none; color: var(--acc); }
 .cm-item[aria-checked="false"] .cm-check { visibility: hidden; }
 .topbar { position: sticky; }
+
+/* ================================================================ cvičná písemka z MA1 */
+@font-face { font-family: "CMU Serif"; font-weight: 400; font-style: normal; font-display: swap; src: url("../vendor/cmu/cmu-serif-500-roman.woff") format("woff"); }
+@font-face { font-family: "CMU Serif"; font-weight: 700; font-style: normal; font-display: swap; src: url("../vendor/cmu/cmu-serif-700-roman.woff") format("woff"); }
+@font-face { font-family: "CMU Serif"; font-weight: 400; font-style: italic; font-display: swap; src: url("../vendor/cmu/cmu-serif-500-italic.woff") format("woff"); }
+
+.test-tiles { grid-template-columns: repeat(var(--n, 6), minmax(0, 1fr)); }
+.test-note { text-align: center; margin-top: -8px; }
+.pis-new { background: var(--surface); border: 2px solid var(--line); border-radius: 18px; padding: 12px 14px; }
+.pis-new .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.pis-new .btn svg, .pz-tools .btn svg { width: 18px; height: 18px; }
+.pis-train { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 8px 0; }
+.pis-tr { font: inherit; color: inherit; text-align: left; cursor: pointer; display: flex; align-items: center; gap: 10px; background: var(--surface); border: 2px solid var(--line); border-radius: 14px; padding: 9px 10px; font-weight: 700; box-shadow: 0 2px 0 var(--line); }
+.pis-tr:hover { border-color: var(--acc); }
+.pis-tr .test-num { flex: none; }
+.pis-all { margin-bottom: 6px; }
+.pis-group { margin: 16px 2px 6px; }
+.pis-list { display: grid; gap: 8px; }
+.pis-row { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 2px solid var(--line); border-radius: 16px; padding: 10px 12px; }
+.pis-row .path-num { width: 34px; height: 34px; }
+.pis-info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.pis-p1 { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pis-p1 .katex { font-size: 1.2em; }
+.pis-btns { display: flex; gap: 6px; flex: none; }
+.pis-row .variant-best { font-size: 12px; }
+.pis-row .variant-best b { font-size: 15px; }
+
+/* karta pravda / nepravda */
+.tf-list { display: grid; gap: 10px; margin-top: 10px; }
+.tf-row { border: 2px solid var(--line); border-radius: 14px; padding: 10px 12px; background: var(--surface); }
+.tf-text { line-height: 1.45; margin-bottom: 8px; }
+.tf-btns .seg { flex: 1; }
+.tf-row.tf-ok { border-color: color-mix(in srgb, var(--primary) 50%, var(--line)); }
+.tf-row.tf-bad { border-color: var(--soft-line); }
+.tf-why { margin-top: 8px; font-size: 14px; line-height: 1.45; color: var(--muted); }
+.tf-why b { color: var(--text); }
+.tf-note { margin-top: 10px; }
+.tf-stmt { font-size: 17px; line-height: 1.5; text-align: left; }
+
+/* tisk / PDF: list A4 jako LaTeX (article, 12 pt) */
+.pz-screen { max-width: 900px; }
+.pz-tools { display: grid; gap: 10px; justify-items: start; margin-bottom: 14px; }
+.pz-tools .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.pz-sheets { display: grid; gap: 18px; justify-items: center; }
+.pz-sheet {
+  width: 210mm; min-height: 297mm; box-sizing: border-box; background: #fff; color: #000; position: relative;
+  padding: 31mm 34mm 26mm 36mm; font-family: "CMU Serif", "Latin Modern Roman", "Computer Modern", serif; font-size: 12pt; line-height: 1.22;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, .18); display: flex; flex-direction: column;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.pz-page { flex: 1; }
+.pz-sheet .katex { font-size: 1.0em; color: #000; }
+.pz-head { font-weight: 700; line-height: 1.5; }
+.pz-head > div { margin-bottom: 1.5pt; }
+.pz-box { display: inline-block; border: 0.5pt solid #000; padding: 0 2.6pt; line-height: 1.15; }
+.pz-rule { border: 0; border-top: 0.5pt solid #000; margin: 9pt 0 22pt; }
+.pz-list { list-style: none; margin: 0; padding: 0; }
+.pz-list > li { display: flex; margin: 0 0 6pt; }
+.pz-num { flex: none; width: 2.5em; text-align: right; padding-right: 0.6em; box-sizing: border-box; padding-left: 0.6em; }
+.pz-body { flex: 1; min-width: 0; }
+.pz-text { margin: 0; }
+.pz-disp { margin: 6pt 0 7pt; }
+.pz-disp .katex-display { margin: 0; }
+.pz-sub { list-style: none; margin: 4pt 0 0; padding: 0; }
+.pz-sub li { display: flex; margin: 1.5pt 0; text-align: justify; }
+.pz-lab { flex: none; width: 2.3em; text-align: right; padding-right: 0.5em; }
+.pz-fn { font-size: 0.7em; vertical-align: 0.55em; line-height: 0; }
+.pz-foot { font-size: 10pt; line-height: 1.2; margin-top: 12pt; }
+.pz-foot hr { width: 40%; margin: 0 0 4pt; border: 0; border-top: 0.4pt solid #000; }
+.pz-foot p { margin: 0; text-indent: 1.2em; }
+.pz-foot sup { font-size: 0.7em; }
+.pz-sheet-prakt { min-height: 0; padding-top: 22mm; padding-bottom: 22mm; font-size: 14pt; }
+.pz-prakt-head { font-weight: 700; margin-bottom: 10pt; }
+.pz-pline { display: flex; gap: 0.5em; margin: 6pt 0; }
+.pz-pcont { margin-top: -2pt; }
+.pz-pnum { flex: none; width: 2em; }
+.pz-sol-head { font-weight: 700; }
+.pz-ans { margin: 1pt 0 2pt; }
+.pz-steps { margin: 2pt 0 6pt; padding-left: 1.4em; font-size: 10.5pt; }
+.pz-steps li { margin: 1.5pt 0; }
+.pz-sol .pz-list > li { margin-bottom: 9pt; }
+.pz-sol .sign-table { font-size: 10pt; min-width: 0; border-collapse: collapse; }
+.pz-sol .sign-table th, .pz-sol .sign-table td { border: 0.4pt solid #000; padding: 2pt 5pt; background: none; color: #000; }
+.pz-sol-steps { min-height: 0; }
+
+@media print {
+  @page { size: A4; margin: 0; }
+  html.pz-printing, html.pz-printing body { background: #fff !important; }
+  html.pz-printing .topbar, html.pz-printing .pz-tools, html.pz-printing .wall, html.pz-printing .toast, html.pz-printing .desktop-hint { display: none !important; }
+  html.pz-printing .page { padding: 0 !important; max-width: none !important; margin: 0 !important; }
+  html.pz-printing .pz-sheets { display: block; gap: 0; }
+  html.pz-printing .pz-sheet { zoom: 1 !important; box-shadow: none; margin: 0; break-after: page; page-break-after: always; min-height: 296mm; }
+  html.pz-printing .pz-sheet:last-child { break-after: auto; page-break-after: auto; }
+  html.pz-printing .pz-sol-steps { min-height: 0; }
+}
+@media (max-width: 480px) {
+  .pis-row { flex-wrap: wrap; }
+  .pis-info { flex-basis: calc(100% - 50px); }
+  .pis-btns { margin-left: auto; }
+  .test-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}

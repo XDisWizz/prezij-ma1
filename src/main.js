@@ -26,6 +26,10 @@ import { ZM } from './zm/paths.js';
 import { DECKS as ZDECKS } from './zm/hlava.js';
 import { VARIANTS, TOTAL, TOPIC } from './zm/test.js';
 import { setWallpaper } from './wallpaper.js';
+import { newExam, newSeed as examSeed, TRAIN, allStatements } from './pisemka/gen.js';
+import { EXAMS, GROUPS, examById, examProblems } from './pisemka/exams.js';
+import { BANK } from './pisemka/tf.js';
+import { examSheet, solutionSheet } from './pisemka/print.js';
 import * as hx from './haptics.js';
 const { haptic, hapticSeq, hapticStop, streakFx, sparkle, ramp } = hx;
 
@@ -228,7 +232,7 @@ sync.onStatus(st => {
   const old = document.querySelector('.sync-block');
   if (old) { const fresh = syncBlock(); if (fresh) old.replaceWith(fresh); }
 });
-const inLesson = () => /^#\/(lekce|procvic|plynulost|zhlavy\/|test\/)/.test(location.hash);
+const inLesson = () => /^#\/(lekce|procvic|plynulost|zhlavy\/|test\/|pisemka\/)/.test(location.hash);
 // přišel pokrok z jiného zařízení → překreslit (ale nikdy uprostřed lekce)
 sync.onData(() => { if (!inLesson() && !document.querySelector('.modal-back')) route(); });
 
@@ -291,7 +295,7 @@ function homeScreen() {
         h('li', {}, 'Funguje to i offline a pokrok máš v mobilu i na počítači.')),
       h('button', { class: 'btn btn-primary', onclick: () => { store.set({ seenWelcome: true }); route(); } }, 'Začít')));
   }
-  if (cur === 'zm') main.append(testCard());
+  main.append(cur === 'zm' ? testCard() : pisemkaCard());
   main.append(h('h2', { class: 'section-title' }, 'Tvoje cesty'));
   const grid = h('div', { class: 'path-grid' });
   PATHS.filter(p => p.course === cur).forEach((p, i) => {
@@ -1263,16 +1267,60 @@ function pocketScreen(scope, lessonId) {
   }
 }
 
-// ------------------------------------------------------------ Základy matematiky: simulace testu
-// Jako papírový test: příklady za sebou, bez zpětné vazby, bez taháku a nápovědy. Body, správné výsledky a postupy až na konci.
+// ------------------------------------------------------------ písemky: simulace testu (Základy) a cvičná písemka (MA1)
+// Jako na papíře: příklady za sebou, bez zpětné vazby, bez taháku a nápovědy. Body, správné výsledky a postupy až na konci.
+// Obojí běží přes stejný kód (examRun), liší se jen „spec“: odkud se berou příklady, jak se jmenují části, kam vede trénink.
+const halfPts = x => Math.round(x * 2) / 2;
+const fmtDate = t => new Date(t).toLocaleDateString('cs-CZ', { day: 'numeric', month: 'numeric' });
+let testWrong = [], testWrongSpec = null;   // úlohy, ve kterých se v posledním testu ztratily body (pro „Procvičit chyby“)
+
+// ---------------- Základy matematiky
 const TEST_PARTS = [
   ['1', 'Komplexní čísla', 4], ['2', 'Goniometrický tvar, mocnina, odmocniny', 10], ['3', 'Rovnice a nerovnice', 8],
   ['4', 'Graf funkce a průsečíky', 4], ['5', 'Přímka nebo rovina', 2], ['6', 'Vzájemná poloha rovin', 2],
 ];
-const PART_PATH = { 1: 'zm-komplex', 2: 'zm-gonio', 3: 'zm-rovnice', 4: 'zm-grafy', 5: 'zm-geometrie', 6: 'zm-geometrie' };
-const halfPts = x => Math.round(x * 2) / 2;
-const fmtDate = t => new Date(t).toLocaleDateString('cs-CZ', { day: 'numeric', month: 'numeric' });
-let testWrong = [];   // úlohy, ve kterých se v posledním testu ztratily body (pro „Procvičit chyby“)
+const ZM_SPEC = {
+  course: 'zm', route: '#/test', title: 'Simulace testu', word: 'test', doneLabel: 'Odevzdat test',
+  key: v => 'zm-test-' + v,
+  variant: v => (VARIANTS[v] ? { title: VARIANTS[v].title, items: VARIANTS[v].build().map(q => ({ id: q.id, pts: q.pts, make: q.make, redo: q.redo, topic: TOPIC[q.id], link: { label: 'Otevřít cestu k tomuhle typu', route: '#/cesta/' + q.path } })) } : null),
+  partTitle: n => TEST_PARTS.find(p => p[0] === n)?.[1] || '',
+  cheat: () => PATHS.filter(p => p.course === 'zm').flatMap(p => p.content.cheat.map(s => ({ ...s, title: `${p.short}: ${s.title}` }))),
+  again: v => (v === 'N' ? ['#/test/N', 'Nová varianta'] : ['#/test', 'Jiná varianta']),
+};
+
+// ---------------- MA1: cvičná písemka
+const MA1_PARTS = [['1', 'Definiční obor'], ['2', 'Monotonie a lokální extrémy'], ['3', 'Limita'], ['4', 'Taylorův polynom 2. řádu'], ['5', 'Neurčitý integrál'], ['6', 'Určitý integrál'], ['7', 'Pravda / nepravda (teorie)']];
+const PRAKT_PARTS = { 1: 'Limity', 2: 'Lokální extrémy', 3: 'Asymptota', 4: 'Taylorův polynom', 5: 'Určitý integrál (per partes)' };
+const examCache = new Map();
+/** písemka podle id: minulá ('26A', 'IF', 'PR') nebo nová ('N123456') */
+function ma1Exam(v) {
+  if (examCache.has(v)) return examCache.get(v);
+  let ex = null;
+  const m1 = /^N(\d+)$/.exec(v);
+  if (m1) { const e = newExam(Number(m1[1])); ex = { ...e, title: `Nová písemka (zadání č. ${e.seed})` }; }
+  else { const e = examById(v); if (e) ex = { ...e, title: e.practical ? 'Praktická část' : `${e.course} · varianta ${e.letter}`, problems: examProblems(e) }; }
+  if (ex) examCache.set(v, ex);
+  return ex;
+}
+const MA1_SPEC = {
+  course: 'ma1', route: '#/pisemka', title: 'Cvičná písemka', word: 'písemka', doneLabel: 'Odevzdat písemku',
+  key: v => 'ma1-test-' + (v[0] === 'N' ? 'N' : v),
+  variant(v) {
+    const ex = ma1Exam(v);
+    if (!ex) return null;
+    return {
+      title: ex.title, print: '#/pisemka/tisk/' + v, practical: ex.practical,
+      items: ex.problems.map(p => ({ id: p.n, pts: p.pts, make: p.card, redo: TRAIN[p.n[0]] && !ex.practical ? TRAIN[p.n[0]].gen : p.card,
+        topic: ex.practical ? PRAKT_PARTS[p.n[0]] : MA1_PARTS[Number(p.n[0]) - 1]?.[1],
+        link: ex.practical ? null : { label: 'Trénovat tenhle typ příkladu', route: '#/pisemka/trenink/' + p.n[0] } })),
+    };
+  },
+  partTitle: n => MA1_PARTS.find(p => p[0] === n)?.[1] || PRAKT_PARTS[n] || '',
+  cheat: () => PATHS.filter(p => p.course === 'ma1').flatMap(p => p.content.cheat.map(s => ({ ...s, title: `${p.short}: ${s.title}` }))),
+  again: v => (v[0] === 'N' ? ['#/pisemka/N', 'Další nová písemka'] : ['#/pisemka', 'Jiná písemka']),
+};
+const SPECS = { zm: ZM_SPEC, ma1: MA1_SPEC };
+const specRuns = (spec, v) => store.get().fluency.filter(f => f.path === spec.key(v));
 
 function testHome() {
   ensureCourse('zm');
@@ -1284,30 +1332,31 @@ function testHome() {
       h('div', { class: 'test-part test-sum' }, h('span'), h('span', {}, 'Celkem'), h('b', {}, `${TOTAL} b`)))));
   main.append(h('h2', { class: 'section-title' }, 'Vyber variantu'));
   main.append(h('div', { class: 'path-grid' }, Object.entries(VARIANTS).map(([v, V]) => {
-    const runs = testRuns(v), best = bestRun(runs);
+    const best = bestRun(testRuns(v));
     return h('button', { class: 'path-card variant-card', onclick: () => go('#/test/' + v) },
       h('span', { class: 'path-num' }, v === 'N' ? '?' : v),
       h('span', { class: 'path-text' }, h('b', {}, V.title), h('span', { class: 'muted' }, V.sub)),
       h('span', { class: 'variant-best' + (best ? '' : ' muted') }, best ? h('b', {}, `${fmtPts(best.correct)}/${TOTAL}`) : 'nové', best ? h('small', {}, 'nejlépe') : null));
   })));
   const hist = ['A', 'B', 'N'].flatMap(v => testRuns(v).map(r => ({ ...r, v }))).sort((a, b) => b.d - a.d).slice(0, 8);
-  if (hist.length) {
-    main.append(h('h2', { class: 'section-title' }, 'Tvoje pokusy'));
-    const maxT = TOTAL;
-    main.append(h('div', { class: 'hist test-hist' }, hist.map(r => h('div', { class: 'hist-row' },
-      h('span', { class: 'hist-bar', style: `width:${Math.max(6, 100 * r.correct / maxT)}%` }),
-      h('span', { class: 'small' }, `${VARIANTS[r.v].title} · ${fmtPts(r.correct)}/${TOTAL} b · ${fmtTime(r.time)} · ${fmtDate(r.d)}`)))));
-  }
+  if (hist.length) main.append(h('h2', { class: 'section-title' }, 'Tvoje pokusy'), histList(hist.map(r => ({ ...r, label: VARIANTS[r.v].title }))));
   main.append(h('p', { class: 'muted small footnote' }, 'Tip: nejdřív projdi cesty, pak napiš variantu A. K variantě B a novým variantám se vrať po pár dnech, ať je vidět, co v hlavě opravdu drží.'));
   app.replaceChildren(topbar('#/', 'Simulace testu'), main);
 }
+function histList(rows) {
+  return h('div', { class: 'hist test-hist' }, rows.map(r => h('div', { class: 'hist-row' },
+    h('span', { class: 'hist-bar', style: `width:${Math.max(6, 100 * r.correct / r.total)}%` }),
+    h('span', { class: 'small' }, `${r.label} · ${fmtPts(r.correct)}/${r.total} b · ${fmtTime(r.time)} · ${fmtDate(r.d)}`))));
+}
 
-function testRun(v) {
-  ensureCourse('zm');
-  if (v === 'chyby') return testPractice();
-  const V = VARIANTS[v];
-  if (!V) return go('#/test');
-  const items = V.build().map(q => ({ q, card: null, cur: null, r: null, got: 0, skipped: false }));
+/** spuštění písemky / testu; v = varianta */
+function examRun(spec, v) {
+  ensureCourse(spec.course);
+  if (v === 'chyby') return testPractice(spec);
+  const V = spec.variant(v);
+  if (!V) return go(spec.route);
+  const items = V.items.map(q => ({ q, card: null, cur: null, r: null, got: 0, skipped: false }));
+  const TOT = items.reduce((s, it) => s + it.q.pts, 0);
   let idx = 0, done = false;
   const t0 = performance.now();
   const bar = h('div', { class: 'bar-fill' });
@@ -1316,7 +1365,7 @@ function testRun(v) {
   const stage = h('div', { class: 'stage' });
   const foot = h('footer', { class: 'lesson-foot' });
   const screen = h('div', { class: 'lesson test-run' },
-    h('div', { class: 'lesson-top' }, h('button', { class: 'icon-btn', 'aria-label': 'Ukončit test', html: ICONS.close, onclick: () => askClose() }), h('div', { class: 'bar lesson-bar' }, bar), clock, pill),
+    h('div', { class: 'lesson-top' }, h('button', { class: 'icon-btn', 'aria-label': 'Ukončit', html: ICONS.close, onclick: () => askClose() }), h('div', { class: 'bar lesson-bar' }, bar), clock, pill),
     stage, foot);
   app.replaceChildren(screen);
   const tick = () => { const s = Math.floor((performance.now() - t0) / 1000); clock.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
@@ -1324,9 +1373,9 @@ function testRun(v) {
   const timer = setInterval(tick, 1000);
 
   function askClose() {
-    modal('Ukončit test?', 'Rozepsaný test se neuloží. Příště začneš znovu od prvního příkladu.', [
+    modal(spec.word === 'test' ? 'Ukončit test?' : 'Ukončit písemku?', 'Rozepsané odpovědi se neuloží. Příště začneš znovu od prvního příkladu.', [
       { label: 'Psát dál', primary: true },
-      { label: 'Ukončit', fn: () => go('#/test') },
+      { label: 'Ukončit', fn: () => go(spec.route) },
     ]);
   }
   function show() {
@@ -1337,7 +1386,7 @@ function testRun(v) {
     it.cur = renderCard(it.card);
     bar.style.width = `${100 * idx / items.length}%`;
     pill.innerHTML = `<b>${it.q.id}</b><span>${idx + 1}/${items.length}</span>`;
-    stage.replaceChildren(h('div', { class: 'test-qhead' }, h('b', {}, `Příklad ${it.q.id}`), h('span', { class: 'test-pts' }, `${fmtPts(it.q.pts)} body`)), it.cur.el);
+    stage.replaceChildren(h('div', { class: 'test-qhead' }, h('b', {}, `Příklad ${it.q.id}`), h('span', { class: 'test-pts' }, `${fmtPts(it.q.pts)} ${it.q.pts >= 5 ? 'bodů' : 'body'}`)), it.cur.el);
     stage.scrollTop = 0;
     window.scrollTo(0, 0);
     it.cur.el.classList.add('enter');
@@ -1346,7 +1395,7 @@ function testRun(v) {
     foot.className = 'lesson-foot';
     foot.replaceChildren(h('div', { class: 'foot-row' },
       h('button', { class: 'btn btn-ghost', onclick: skip }, 'Přeskočit'),
-      h('button', { class: 'btn btn-primary', onclick: save }, last ? 'Odevzdat test' : 'Další příklad')));
+      h('button', { class: 'btn btn-primary', onclick: save }, last ? spec.doneLabel : 'Další příklad')));
     it.cur.focus && setTimeout(it.cur.focus, 30);
   }
   function save() {
@@ -1376,11 +1425,12 @@ function testRun(v) {
     document.removeEventListener('keydown', onKey);
     const time = (performance.now() - t0) / 1000;
     const total = halfPts(items.reduce((s, it) => s + it.got, 0));
-    const before = bestRun(testRuns(v));
-    store.addFluency({ path: 'zm-test-' + v, d: Date.now(), time: Math.round(time), correct: total, total: TOTAL });
-    const res = store.finishLesson('zm-test-' + v, { acc: total / TOTAL, time });
+    const before = bestRun(specRuns(spec, v));
+    store.addFluency({ path: spec.key(v), d: Date.now(), time: Math.round(time), correct: total, total: TOT });
+    const res = store.finishLesson(spec.key(v), { acc: total / TOT, time });
     testWrong = items.filter(it => it.got < it.q.pts).map(it => it.q);
-    testResults(v, items, time, total, before, res);
+    testWrongSpec = spec;
+    testResults(spec, v, V, items, time, total, TOT, before, res);
   }
   function onKey(e) {
     if (document.querySelector('.modal-back')) return;
@@ -1393,35 +1443,38 @@ function testRun(v) {
   cleanup = () => { document.removeEventListener('keydown', onKey); clearInterval(timer); };
   show();
 }
+const testRun = v => examRun(ZM_SPEC, v);
 
-function testResults(v, items, time, total, before, res) {
-  const V = VARIANTS[v];
-  const pct = Math.round(100 * total / TOTAL);
+function testResults(spec, v, V, items, time, total, TOT, before, res) {
+  const pct = Math.round(100 * total / TOT);
   const main = h('main', { class: 'page test-res' });
-  // součty po příkladech 1–6
-  const parts = TEST_PARTS.map(([n, t]) => {
+  // součty po příkladech (podle první číslice: 1a + 1b = příklad 1)
+  const order = [...new Set(items.map(it => it.q.id[0]))];
+  const parts = order.map(n => {
     const its = items.filter(it => it.q.id[0] === n);
-    return { n, t, got: its.reduce((s, it) => s + it.got, 0), max: its.reduce((s, it) => s + it.q.pts, 0) };
+    return { n, t: spec.partTitle(n), got: its.reduce((s, it) => s + it.got, 0), max: its.reduce((s, it) => s + it.q.pts, 0) };
   });
   const lost = parts.filter(p => p.got < p.max).sort((a, b) => (b.max - b.got) - (a.max - a.got));
   main.append(h('section', { class: 'test-score' },
     h('small', {}, V.title.toUpperCase()),
-    h('div', { class: 'test-big' }, fmtPts(total), h('span', {}, ` / ${TOTAL}`)),
-    h('p', { class: 'muted' }, `bodů · ${pct} % · ${fmtTime(time)}`),
+    h('div', { class: 'test-big' }, fmtPts(total), h('span', {}, ` / ${TOT}`)),
+    h('p', { class: 'muted' }, `bodů · ${pct} % · ${fmtTime(time)}${spec.course === 'ma1' && !V.practical ? ' (na písemce je 100 minut)' : ''}`),
     h('div', { class: 'bar' }, h('div', { class: 'bar-fill', style: `width:${pct}%` })),
-    before ? h('p', { class: 'small' }, total > before.correct ? `Nový rekord! Dřív nejlépe ${fmtPts(before.correct)} bodů.` : `Tvoje nejlepší v téhle variantě: ${fmtPts(before.correct)} bodů.`) : null,
+    before ? h('p', { class: 'small' }, total > before.correct ? `Nový rekord! Dřív nejlépe ${fmtPts(before.correct)} bodů.` : `Tvoje nejlepší tady: ${fmtPts(before.correct)} bodů.`) : null,
     res && res.streakUp ? h('p', { class: 'streak-msg', html: ICONS.flame + `<span>Série: ${res.streak} ${res.streak === 1 ? 'den' : res.streak < 5 ? 'dny' : 'dní'}</span>` }) : null));
-  main.append(h('div', { class: 'test-tiles' }, parts.map(p => h('button', {
+  main.append(h('div', { class: 'test-tiles', style: `--n:${parts.length}` }, parts.map(p => h('button', {
     class: 'test-tile ' + (p.got === p.max ? 'full' : p.got === 0 ? 'zero' : 'part'), type: 'button',
     onclick: () => main.querySelector(`[data-part="${p.n}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
   }, h('span', { class: 'muted small' }, `Př. ${p.n}`), h('b', {}, `${fmtPts(p.got)}/${p.max}`)))));
   main.append(h('p', { class: 'end-msg' }, !lost.length ? 'Plný počet bodů. Tohle je přesně ono.'
     : `Nejvíc bodů uteklo v příkladu ${lost[0].n} (${lost[0].t.toLowerCase()}, −${fmtPts(lost[0].max - lost[0].got)} b). Tam se vyplatí vrátit.`));
-  const actions = h('div', { class: 'end-actions' },
-    testWrong.length ? h('button', { class: 'btn btn-primary', onclick: () => go('#/test/chyby') }, `Procvičit chybné (${testWrong.length})`) : null,
-    h('button', { class: testWrong.length ? 'btn btn-ghost' : 'btn btn-primary', onclick: () => go(v === 'N' ? '#/test/N' : '#/test') }, v === 'N' ? 'Nová varianta' : 'Jiná varianta'),
-    h('button', { class: 'btn btn-ghost', onclick: () => go('#/') }, 'Domů'));
-  main.append(actions);
+  if (spec.course === 'ma1') main.append(h('p', { class: 'muted small test-note' }, 'Appka hodnotí výsledek. Na papíře se za správný postup dávají i dílčí body, takže skutečný výsledek může být vyšší.'));
+  const [againR, againL] = spec.again(v);
+  main.append(h('div', { class: 'end-actions' },
+    testWrong.length ? h('button', { class: 'btn btn-primary', onclick: () => go(spec.route + '/chyby') }, `Procvičit chybné (${testWrong.length})`) : null,
+    h('button', { class: testWrong.length ? 'btn btn-ghost' : 'btn btn-primary', onclick: () => go(againR) }, againL),
+    V.print ? h('button', { class: 'btn btn-ghost', onclick: () => go(V.print) }, 'Zadání a řešení do PDF') : null,
+    h('button', { class: 'btn btn-ghost', onclick: () => go('#/') }, 'Domů')));
   main.append(h('h2', { class: 'section-title' }, 'Příklad po příkladu'));
   let lastPart = null;
   for (const it of items) {
@@ -1431,9 +1484,9 @@ function testResults(v, items, time, total, before, res) {
     const body = h('div', { class: 'test-item-body' }, it.cur.el,
       it.r?.msg && !full ? h('div', { class: 'fb-msg', html: m(it.r.msg) }) : null,
       steps && steps.length ? h('details', { class: 'steps', open: !full || null }, h('summary', {}, 'Postup krok za krokem'), h('ol', { class: 'steps-list' }, steps.map(s => h('li', { html: m(s) })))) : null,
-      h('button', { class: 'btn btn-ghost btn-small', onclick: () => go('#/cesta/' + it.q.path) }, 'Otevřít cestu k tomuhle typu'));
+      it.q.link ? h('button', { class: 'btn btn-ghost btn-small', onclick: () => go(it.q.link.route) }, it.q.link.label) : null);
     const det = h('details', { class: 'test-item ' + (full ? 'full' : it.got > 0 ? 'part' : 'zero'), open: !full || null },
-      h('summary', {}, h('span', { class: 'test-mark', html: mark }), h('b', {}, it.q.id), h('span', { class: 'test-topic' }, TOPIC[it.q.id] || ''),
+      h('summary', {}, h('span', { class: 'test-mark', html: mark }), h('b', {}, it.q.id), h('span', { class: 'test-topic' }, it.q.topic || ''),
         h('span', { class: 'test-got' }, it.skipped ? 'přeskočeno' : `${fmtPts(it.got)}/${it.q.pts} b`)),
       body);
     if (it.q.id[0] !== lastPart) { lastPart = it.q.id[0]; det.dataset.part = lastPart; }
@@ -1445,17 +1498,126 @@ function testResults(v, items, time, total, before, res) {
 }
 
 /** chybné úlohy z posledního testu, každá dvakrát s jinými čísly, se zpětnou vazbou a postupem */
-function testPractice() {
-  if (!testWrong.length) return go('#/test');
+function testPractice(spec) {
+  if (!testWrong.length || testWrongSpec !== spec) return go(spec.route);
   const fs = shuffle(testWrong.flatMap(q => [q.redo, q.redo]));
   runLesson({
-    factories: fs, title: 'Chyby z testu', back: '#/test', mode: 'lesson', pathId: null,
-    cheat: PATHS.filter(p => p.course === 'zm').flatMap(p => p.content.cheat.map(s => ({ ...s, title: `${p.short}: ${s.title}` }))),
+    factories: fs, title: 'Chyby z testu', back: spec.route, mode: 'lesson', pathId: null, cheat: spec.cheat(),
     onFinish: ({ time, acc, exercises, mistakes }) => {
-      const res = store.finishLesson('zm-test-chyby', { acc, time });
-      endScreen({ title: 'Procvičeno!', sub: 'Typy příkladů, ve kterých v testu utekly body', acc, time, exercises, mistakes, res, back: '#/test', backLabel: 'Zpět na simulaci', again: '#/test/chyby' });
+      const res = store.finishLesson(spec.key('chyby'), { acc, time });
+      endScreen({ title: 'Procvičeno!', sub: 'Typy příkladů, ve kterých utekly body', acc, time, exercises, mistakes, res, back: spec.route, backLabel: spec.word === 'test' ? 'Zpět na simulaci' : 'Zpět na písemky', again: spec.route + '/chyby' });
     },
   });
+}
+
+// ---------------- MA1: výběr písemky, trénink, tisk
+function pisemkaHome() {
+  ensureCourse('ma1');
+  const main = h('main', { class: 'page test-home' });
+  main.append(h('section', { class: 'test-hero' },
+    h('h1', {}, 'Cvičná písemka'),
+    h('p', {}, 'Závěrečné písemky z MA1 z minulých let a nové se stejnými typy příkladů. Při psaní žádná nápověda ani kontrola, body, správné výsledky a celé postupy až na konci. Každou písemku si můžeš i vytisknout nebo uložit jako PDF a napsat na papír.'),
+    h('div', { class: 'test-parts' }, MA1_PARTS.map(([n, t]) => h('div', { class: 'test-part' }, h('span', { class: 'test-num' }, n), h('span', {}, t), h('b', {}, '10 b'))),
+      h('div', { class: 'test-part test-sum' }, h('span'), h('span', {}, 'Celkem · čas 100 minut'), h('b', {}, '70 b')))));
+  // nová písemka
+  const bestN = bestRun(specRuns(MA1_SPEC, 'N'));
+  main.append(h('h2', { class: 'section-title' }, 'Nová písemka'),
+    h('div', { class: 'pis-new' },
+      h('p', { class: 'muted small' }, `Stejné typy příkladů jako v minulých letech, pokaždé jiná čísla.${bestN ? ` Tvoje nejlepší: ${fmtPts(bestN.correct)}/70.` : ''}`),
+      h('div', { class: 'row' },
+        h('button', { class: 'btn btn-primary', onclick: () => go('#/pisemka/N') }, 'Psát v appce'),
+        h('button', { class: 'btn btn-ghost', onclick: () => go('#/pisemka/tisk/N'), html: ICONS.download + '<span>PDF k vytištění</span>' }))));
+  // trénink
+  main.append(h('h2', { class: 'section-title' }, 'Trénink po příkladech'),
+    h('p', { class: 'muted small' }, 'Jeden typ příkladu pořád dokola, s kontrolou a postupem po každém. Nejrychlejší cesta, jak dostat typ „do ruky“.'),
+    h('div', { class: 'pis-train' }, MA1_PARTS.map(([n, t]) => h('button', { class: 'pis-tr', type: 'button', onclick: () => go('#/pisemka/trenink/' + n) }, h('span', { class: 'test-num' }, n), h('span', {}, t)))),
+    h('button', { class: 'btn btn-ghost btn-small pis-all', onclick: () => go('#/pisemka/trenink/teorie') }, `Projít všech ${BANK.length} tvrzení z písemek`));
+  // minulé písemky
+  main.append(h('h2', { class: 'section-title' }, 'Písemky z minulých let'));
+  for (const g of GROUPS) {
+    const exs = EXAMS.filter(e => e.group === g.id);
+    main.append(h('div', { class: 'pis-group' }, h('b', {}, g.title), h('span', { class: 'muted small' }, ' · ' + g.sub)));
+    main.append(h('div', { class: 'pis-list' }, exs.map(e => {
+      const best = bestRun(specRuns(MA1_SPEC, e.id));
+      const p1 = e.practical ? '\\lim \\dots,\\ \\int_0^{\\pi/2} \\dots' : examProblems(e)[0].tex;
+      return h('div', { class: 'pis-row' },
+        h('span', { class: 'path-num' }, e.letter || 'P'),
+        h('span', { class: 'pis-info' }, h('b', {}, e.practical ? 'Praktická část' : `Varianta ${e.letter}`), h('span', { class: 'pis-p1', html: m(`$${p1}$`) })),
+        best ? h('span', { class: 'variant-best' }, h('b', {}, `${fmtPts(best.correct)}/${best.total}`), h('small', {}, 'nejlépe')) : null,
+        h('span', { class: 'pis-btns' },
+          h('button', { class: 'btn btn-primary btn-small', onclick: () => go('#/pisemka/' + e.id) }, 'Psát'),
+          h('button', { class: 'btn btn-ghost btn-small', onclick: () => go('#/pisemka/tisk/' + e.id), 'aria-label': 'PDF k vytištění' }, 'PDF')));
+    })));
+  }
+  const keys = ['N', ...EXAMS.map(e => e.id)];
+  const hist = keys.flatMap(k => specRuns(MA1_SPEC, k).map(r => ({ ...r, label: k === 'N' ? 'Nová písemka' : (examById(k)?.practical ? 'Praktická část' : `Varianta ${examById(k)?.letter} (${k})`) }))).sort((a, b) => b.d - a.d).slice(0, 8);
+  if (hist.length) main.append(h('h2', { class: 'section-title' }, 'Tvoje pokusy'), histList(hist));
+  app.replaceChildren(topbar('#/', 'Cvičná písemka'), main);
+}
+
+function pisemkaTrain(n) {
+  ensureCourse('ma1');
+  const back = '#/pisemka';
+  let factories, title;
+  if (n === 'teorie') { factories = shuffle(allStatements()); title = 'Všechna tvrzení z písemek'; }
+  else { const T = TRAIN[n]; if (!T) return go(back); factories = Array.from({ length: n === '7' ? 10 : 6 }, () => T.gen); title = `Trénink: ${T.title}`; }
+  runLesson({
+    factories, title, back, mode: 'lesson', pathId: null, cheat: MA1_SPEC.cheat(),
+    onFinish: ({ time, acc, exercises, mistakes }) => {
+      const res = store.finishLesson('ma1-trenink-' + n, { acc, time });
+      endScreen({ title: 'Trénink hotový', sub: title, acc, time, exercises, mistakes, res, back, backLabel: 'Zpět na písemky', again: '#/pisemka/trenink/' + n, againLabel: 'Další kolo', againFirst: true });
+    },
+  });
+}
+
+/** zadání (a řešení) k tisku / do PDF */
+function pisemkaPrint(v) {
+  ensureCourse('ma1');
+  if (v === 'N') { location.replace('#/pisemka/tisk/N' + examSeed()); return; }
+  const ex = ma1Exam(v);
+  if (!ex) return go('#/pisemka');
+  let mode = 'zadani';
+  const sheets = h('div', { class: 'pz-sheets' });
+  const draw = () => {
+    sheets.replaceChildren(examSheet(ex, ex.problems), ...(mode === 'zadani' ? [] : [solutionSheet(ex, ex.problems, mode === 'postupy')]));
+    requestAnimationFrame(fit);
+  };
+  // náhled na obrazovce: list A4 zmenšený na šířku stránky (při tisku vždy 100 %)
+  const fit = () => {
+    const w = sheets.clientWidth;
+    sheets.querySelectorAll('.pz-sheet').forEach(s => { s.style.zoom = ''; s.style.zoom = String(Math.min(1, w / s.offsetWidth)); });
+  };
+  const seg = (id, label) => h('button', { class: 'seg' + (mode === id ? ' selected' : ''), type: 'button', onclick: e => { mode = id; e.currentTarget.parentElement.querySelectorAll('.seg').forEach(b => b.classList.toggle('selected', b === e.currentTarget)); draw(); } }, label);
+  const bar = h('div', { class: 'pz-tools' },
+    h('div', { class: 'seg-group' }, seg('zadani', 'Jen zadání'), seg('vysledky', '+ výsledky'), seg('postupy', '+ postupy')),
+    h('button', { class: 'btn btn-primary', onclick: () => window.print(), html: ICONS.download + '<span>Vytisknout / uložit PDF</span>' }),
+    h('p', { class: 'muted small' }, 'V okně tisku zvol tiskárnu „Uložit jako PDF“ (na Androidu „Uložit do PDF“). Okraje: žádné nebo výchozí, měřítko 100 %.'),
+    ex.generated ? h('div', { class: 'row' },
+      h('button', { class: 'btn btn-ghost btn-small', onclick: () => go('#/pisemka/' + v) }, 'Napsat tuhle písemku v appce'),
+      h('button', { class: 'btn btn-ghost btn-small', onclick: () => go('#/pisemka/tisk/N') }, 'Jiná nová písemka')) : null);
+  const main = h('main', { class: 'page pz-screen' }, bar, sheets);
+  app.replaceChildren(topbar('#/pisemka', ex.title), main);
+  document.documentElement.classList.add('pz-printing');
+  window.addEventListener('resize', fit);
+  cleanup = () => { window.removeEventListener('resize', fit); document.documentElement.classList.remove('pz-printing'); };
+  document.fonts?.load('16px "CMU Serif"').finally(draw) ?? draw();
+}
+
+function pisemkaRoute(parts) {
+  const v = parts[1];
+  if (!v) return pisemkaHome();
+  if (v === 'tisk') return pisemkaPrint(parts[2] || 'N');
+  if (v === 'trenink') return pisemkaTrain(parts[2]);
+  if (v === 'N') { location.replace('#/pisemka/N' + examSeed()); return; }
+  return examRun(MA1_SPEC, v);
+}
+function pisemkaCard() {
+  const all = ['N', ...EXAMS.map(e => e.id)].flatMap(k => specRuns(MA1_SPEC, k));
+  const best = bestRun(all.map(r => ({ ...r, correct: r.correct / r.total * 70 })));
+  return h('button', { class: 'coll-card test-card', onclick: () => go('#/pisemka') },
+    h('span', { class: 'test-card-icon', html: ICONS.trophy }),
+    h('span', { class: 'path-text' }, h('b', {}, 'Cvičná písemka'), h('span', { class: 'muted' }, all.length ? `${all.length}× napsáno · nejlépe ${fmtPts(Math.round(best.correct))} ze 70` : `${EXAMS.length - 1} písemek z minulých let, nové na počkání, PDF`)),
+    h('span', { class: 'go' }, 'Otevřít'));
 }
 
 // ------------------------------------------------------------ sbírka pohárků
@@ -1595,7 +1757,7 @@ function route() {
   const hash = location.hash.replace(/\?.*$/, '') || '#/';
   const parts = hash.slice(2).split('/');
   // tapeta jen na hlavních stránkách (domů, cesta, sbírka, výběr testu, nastavení), nikdy v lekci ani v testu
-  const calm = ['', 'cesta', 'sbirka', 'nastaveni'].includes(parts[0]) || (parts[0] === 'test' && !parts[1]);
+  const calm = ['', 'cesta', 'sbirka', 'nastaveni'].includes(parts[0]) || ((parts[0] === 'test' || parts[0] === 'pisemka') && !parts[1]);
   document.documentElement.dataset.wall = calm && store.get().wallpaper !== false ? 'on' : 'off';
   setWallpaper(course());
   window.scrollTo(0, 0);
@@ -1607,7 +1769,8 @@ function route() {
     case 'zhlavy': pocketScreen(parts[1], parts[2]); break;
     case 'nastaveni': settingsScreen(); break;
     case 'sbirka': collectionScreen(parts[1]); break;
-    case 'test': parts[1] ? testRun(parts[1]) : testHome(); break;
+    case 'test': parts[1] ? examRun(ZM_SPEC, parts[1]) : testHome(); break;
+    case 'pisemka': pisemkaRoute(parts); break;
     default: homeScreen();
   }
   // odchod z obrazovky s pohárkem po první lekci (kamkoli) → nabídka přihlášení

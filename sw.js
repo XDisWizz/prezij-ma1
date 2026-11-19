@@ -1,7 +1,7 @@
 // Service worker: aplikace jde nainstalovat a funguje i offline.
 // Strategie „nejdřív síť“: online vždycky čerstvá verze, bez sítě poslední uložená.
 // Při větší změně stačí zvýšit číslo verze.
-const CACHE = 'ma1-v24';
+const CACHE = 'ma1-v25';
 const CORE = [
   './', './index.html', './manifest.webmanifest', './css/style.css',
   './vendor/katex/katex.min.css', './vendor/katex/katex.min.js',
@@ -16,6 +16,8 @@ const CORE = [
   './src/prubeh/content.js', './src/prubeh/gen.js', './src/prubeh/hlava.js',
   './src/integraly/content.js', './src/integraly/gen.js', './src/integraly/hlava.js',
   './src/zm/expr.js', './src/zm/form.js', './src/zm/plot.js', './src/zm/trig.js', './src/zm/paths.js', './src/zm/hlava.js', './src/zm/test.js',
+  './src/pisemka/build.js', './src/pisemka/types.js', './src/pisemka/exams.js', './src/pisemka/gen.js', './src/pisemka/tf.js', './src/pisemka/tfcard.js', './src/pisemka/print.js',
+  './vendor/cmu/cmu-serif-500-roman.woff', './vendor/cmu/cmu-serif-700-roman.woff', './vendor/cmu/cmu-serif-500-italic.woff',
   './src/zm/komplex/gen.js', './src/zm/gonio/gen.js', './src/zm/rovnice/gen.js', './src/zm/grafy/gen.js', './src/zm/geometrie/gen.js',
 ];
 
