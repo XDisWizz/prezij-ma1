@@ -1297,13 +1297,13 @@ function ma1Exam(v) {
   if (examCache.has(v)) return examCache.get(v);
   let ex = null;
   const m1 = /^N(\d+)$/.exec(v);
-  if (m1) { const e = newExam(Number(m1[1])); ex = { ...e, title: `Nová písemka (zadání č. ${e.seed})` }; }
+  if (m1) { const e = newExam(Number(m1[1])); ex = { ...e, title: `Generovaná písemka č. ${e.seed}` }; }
   else { const e = examById(v); if (e) ex = { ...e, title: e.practical ? 'Praktická část' : `${e.course} · varianta ${e.letter}`, problems: examProblems(e) }; }
   if (ex) examCache.set(v, ex);
   return ex;
 }
 const MA1_SPEC = {
-  course: 'ma1', route: '#/pisemka', title: 'Cvičná písemka', word: 'písemka', doneLabel: 'Odevzdat písemku',
+  course: 'ma1', route: '#/pisemka', title: 'Cvičná zápočtová zkouška', word: 'písemka', doneLabel: 'Odevzdat písemku', onFinish: (v, items) => pisAfterExam(v, items),
   key: v => 'ma1-test-' + (v[0] === 'N' ? 'N' : v),
   variant(v) {
     const ex = ma1Exam(v);
@@ -1317,7 +1317,7 @@ const MA1_SPEC = {
   },
   partTitle: n => MA1_PARTS.find(p => p[0] === n)?.[1] || PRAKT_PARTS[n] || '',
   cheat: () => PATHS.filter(p => p.course === 'ma1').flatMap(p => p.content.cheat.map(s => ({ ...s, title: `${p.short}: ${s.title}` }))),
-  again: v => (v[0] === 'N' ? ['#/pisemka/N', 'Další nová písemka'] : ['#/pisemka', 'Jiná písemka']),
+  again: v => (v[0] === 'N' ? ['#/pisemka/N', 'Vygenerovat další písemku'] : ['#/pisemka', 'Zpět na zkoušku']),
 };
 const SPECS = { zm: ZM_SPEC, ma1: MA1_SPEC };
 const specRuns = (spec, v) => store.get().fluency.filter(f => f.path === spec.key(v));
@@ -1430,6 +1430,7 @@ function examRun(spec, v) {
     const res = store.finishLesson(spec.key(v), { acc: total / TOT, time });
     testWrong = items.filter(it => it.got < it.q.pts).map(it => it.q);
     testWrongSpec = spec;
+    spec.onFinish?.(v, items);
     testResults(spec, v, V, items, time, total, TOT, before, res);
   }
   function onKey(e) {
@@ -1473,7 +1474,7 @@ function testResults(spec, v, V, items, time, total, TOT, before, res) {
   main.append(h('div', { class: 'end-actions' },
     testWrong.length ? h('button', { class: 'btn btn-primary', onclick: () => go(spec.route + '/chyby') }, `Procvičit chybné (${testWrong.length})`) : null,
     h('button', { class: testWrong.length ? 'btn btn-ghost' : 'btn btn-primary', onclick: () => go(againR) }, againL),
-    V.print ? h('button', { class: 'btn btn-ghost', onclick: () => go(V.print) }, 'Zadání a řešení do PDF') : null,
+    V.print ? h('button', { class: 'btn btn-ghost', onclick: () => go(V.print) }, 'PDF se zadáním a řešením') : null,
     h('button', { class: 'btn btn-ghost', onclick: () => go('#/') }, 'Domů')));
   main.append(h('h2', { class: 'section-title' }, 'Příklad po příkladu'));
   let lastPart = null;
@@ -1505,54 +1506,156 @@ function testPractice(spec) {
     factories: fs, title: 'Chyby z testu', back: spec.route, mode: 'lesson', pathId: null, cheat: spec.cheat(),
     onFinish: ({ time, acc, exercises, mistakes }) => {
       const res = store.finishLesson(spec.key('chyby'), { acc, time });
-      endScreen({ title: 'Procvičeno!', sub: 'Typy příkladů, ve kterých utekly body', acc, time, exercises, mistakes, res, back: spec.route, backLabel: spec.word === 'test' ? 'Zpět na simulaci' : 'Zpět na písemky', again: spec.route + '/chyby' });
+      endScreen({ title: 'Procvičeno!', sub: 'Typy příkladů, ve kterých utekly body', acc, time, exercises, mistakes, res, back: spec.route, backLabel: spec.word === 'test' ? 'Zpět na simulaci' : 'Zpět na zkoušku', again: spec.route + '/chyby' });
     },
   });
 }
 
-// ---------------- MA1: výběr písemky, trénink, tisk
+// ---------------- MA1: cvičná zápočtová zkouška (přehled, trénink, tisk)
+// Přehled je stavěný pro studenta pod tlakem: nahoře jeden doporučený krok, pak generovaná písemka,
+// pak „kde ztrácíš body“ (připravenost po typech příkladů) a nakonec písemky z minulých let jako mřížka.
+const ZK = 'Cvičná zápočtová zkouška';
+const INF_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.2 8.2c-2.1 0-3.7 1.7-3.7 3.8s1.6 3.8 3.7 3.8c3.3 0 6.3-7.6 9.6-7.6 2.1 0 3.7 1.7 3.7 3.8s-1.6 3.8-3.7 3.8c-3.3 0-6.3-7.6-9.6-7.6z" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const CHEV = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const PDF_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v13H7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M14 3v5h5M10 13h6M10 17h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+
+// připravenost po typech příkladů: posledních pár výsledků (písemky i trénink), jen v tomhle zařízení
+const PIS_KEEP = 8, PIS_AVG = 5;
+function pisRecord(n, f) {
+  const st = { ...(store.get().pisStats || {}) };
+  st[n] = [...(st[n] || []), { d: Date.now(), f: Math.max(0, Math.min(1, f)) }].slice(-PIS_KEEP);
+  store.set({ pisStats: st });
+}
+function pisMastery(n) {
+  const a = (store.get().pisStats || {})[n] || [];
+  if (!a.length) return null;
+  const last = a.slice(-PIS_AVG);
+  return Math.round(100 * last.reduce((s, x) => s + x.f, 0) / last.length);
+}
+/** po odevzdané písemce: body po typech příkladů do připravenosti */
+function pisAfterExam(v, items) {
+  if (MA1_SPEC.variant(v)?.practical) return;
+  for (const it of items) if (/^[1-7]$/.test(it.q.id)) pisRecord(it.q.id, it.got / it.q.pts);
+}
+const pisRuns = () => ['N', ...EXAMS.map(e => e.id)].flatMap(k => specRuns(MA1_SPEC, k).map(r => ({ ...r, k })));
+const SERIES = { n26: 'řada 2026', n25: 'řada 2025', old: 'starší zadání', prakt: '' };
+const examLabel = k => (k === 'N' ? 'Generovaná písemka' : examById(k)?.practical ? 'Praktická část' : `Varianta ${examById(k)?.letter}${dupNo(examById(k)) ? dupNo(examById(k)) : ''} (${SERIES[examById(k)?.group] || ''})`);
+const pct = (a, b) => Math.round(100 * a / b);
+
+/** co má student udělat teď */
+function pisNextStep() {
+  const runs = pisRuns();
+  const m = MA1_PARTS.map(([n, t]) => ({ n, t, v: pisMastery(n) }));
+  if (!runs.length && m.every(x => x.v == null)) {
+    return { title: 'Začni jednou písemkou nanečisto', text: 'Napiš generovanou písemku v appce. Na konci uvidíš body po příkladech a appka ti ukáže, co trénovat nejdřív. Klidně i s chybami, o to tu jde.', label: 'Napsat generovanou písemku', route: '#/pisemka/N' };
+  }
+  const untried = m.find(x => x.v == null);
+  if (untried) return { title: `Vyzkoušej příklad ${untried.n}: ${untried.t.toLowerCase()}`, text: 'Tenhle typ ještě nemáš vyzkoušený. Krátký trénink, pár příkladů s kontrolou a postupem.', label: 'Trénovat', route: '#/pisemka/trenink/' + untried.n };
+  const weak = m.filter(x => x.v < 80).sort((a, b) => a.v - b.v)[0];
+  if (weak) return { title: `Nejvíc bodů utíká v příkladu ${weak.n}`, text: `${weak.t}: zatím ${weak.v} %. Pár kol tréninku a bude to sedět. Po každém příkladu uvidíš postup.`, label: `Trénovat příklad ${weak.n}`, route: '#/pisemka/trenink/' + weak.n };
+  const fresh = EXAMS.find(e => !e.practical && !specRuns(MA1_SPEC, e.id).length);
+  if (fresh) return { title: 'Všechny typy ti jdou. Teď celá písemka', text: `Napiš si skutečné zadání z minulých let (${examLabel(fresh.id)}) celé najednou, jako na zkoušce.`, label: 'Napsat písemku', route: '#/pisemka/' + fresh.id };
+  return { title: 'Na zkoušku je hotovo', text: 'Všechny typy nad 80 % a všechny minulé písemky napsané. Formu udržíš jednou generovanou písemkou denně.', label: 'Generovaná písemka', route: '#/pisemka/N' };
+}
+
 function pisemkaHome() {
   ensureCourse('ma1');
-  const main = h('main', { class: 'page test-home' });
-  main.append(h('section', { class: 'test-hero' },
-    h('h1', {}, 'Cvičná písemka'),
-    h('p', {}, 'Závěrečné písemky z MA1 z minulých let a nové se stejnými typy příkladů. Při psaní žádná nápověda ani kontrola, body, správné výsledky a celé postupy až na konci. Každou písemku si můžeš i vytisknout nebo uložit jako PDF a napsat na papír.'),
-    h('div', { class: 'test-parts' }, MA1_PARTS.map(([n, t]) => h('div', { class: 'test-part' }, h('span', { class: 'test-num' }, n), h('span', {}, t), h('b', {}, '10 b'))),
-      h('div', { class: 'test-part test-sum' }, h('span'), h('span', {}, 'Celkem · čas 100 minut'), h('b', {}, '70 b')))));
-  // nová písemka
+  const main = h('main', { class: 'page zk' });
+  const runs = pisRuns();
+  const known = MA1_PARTS.map(([n]) => pisMastery(n)).filter(v => v != null);
+  const ready = known.length ? Math.round(known.reduce((s, v) => s + v, 0) / known.length) : null;
+  const last = runs.sort((a, b) => b.d - a.d)[0];
+
+  // ---- hlavička
+  main.append(h('section', { class: 'zk-hero' },
+    h('div', { class: 'zk-hero-text' },
+      h('small', {}, 'MA1 · NANEČISTO'),
+      h('h1', {}, ZK),
+      h('div', { class: 'zk-chips' }, h('span', {}, '7 příkladů'), h('span', {}, '70 bodů'), h('span', {}, '100 minut')),
+      h('p', {}, last ? `Poslední pokus: ${fmtPts(last.correct)}/${last.total} bodů · ${fmtDate(last.d)}` : 'Nic se nikam nepočítá. Piš, chybuj, uč se z postupů.')),
+    h('div', { class: 'zk-ring', style: `--p:${ready ?? 0}`, title: 'Připravenost: průměr posledních výsledků po typech příkladů' },
+      h('span', {}, h('b', {}, ready == null ? '–' : `${ready} %`), h('small', {}, 'připravenost')))));
+
+  // ---- doporučený krok
+  const ns = pisNextStep();
+  main.append(h('section', { class: 'zk-next' },
+    h('div', { class: 'zk-next-label' }, 'TEĎ UDĚLEJ TOHLE'),
+    h('b', {}, ns.title), h('p', {}, ns.text),
+    h('button', { class: 'btn btn-primary', onclick: () => go(ns.route) }, ns.label)));
+
+  // ---- generovaná písemka
   const bestN = bestRun(specRuns(MA1_SPEC, 'N'));
-  main.append(h('h2', { class: 'section-title' }, 'Nová písemka'),
-    h('div', { class: 'pis-new' },
-      h('p', { class: 'muted small' }, `Stejné typy příkladů jako v minulých letech, pokaždé jiná čísla.${bestN ? ` Tvoje nejlepší: ${fmtPts(bestN.correct)}/70.` : ''}`),
-      h('div', { class: 'row' },
-        h('button', { class: 'btn btn-primary', onclick: () => go('#/pisemka/N') }, 'Psát v appce'),
-        h('button', { class: 'btn btn-ghost', onclick: () => go('#/pisemka/tisk/N'), html: ICONS.download + '<span>PDF k vytištění</span>' }))));
-  // trénink
-  main.append(h('h2', { class: 'section-title' }, 'Trénink po příkladech'),
-    h('p', { class: 'muted small' }, 'Jeden typ příkladu pořád dokola, s kontrolou a postupem po každém. Nejrychlejší cesta, jak dostat typ „do ruky“.'),
-    h('div', { class: 'pis-train' }, MA1_PARTS.map(([n, t]) => h('button', { class: 'pis-tr', type: 'button', onclick: () => go('#/pisemka/trenink/' + n) }, h('span', { class: 'test-num' }, n), h('span', {}, t)))),
-    h('button', { class: 'btn btn-ghost btn-small pis-all', onclick: () => go('#/pisemka/trenink/teorie') }, `Projít všech ${BANK.length} tvrzení z písemek`));
-  // minulé písemky
-  main.append(h('h2', { class: 'section-title' }, 'Písemky z minulých let'));
+  main.append(h('section', { class: 'zk-gen' },
+    h('div', { class: 'zk-gen-head' },
+      h('span', { class: 'zk-gen-icon', html: INF_ICON }),
+      h('span', {}, h('b', {}, 'Generovaná písemka'), h('small', {}, bestN ? `nejlépe ${fmtPts(bestN.correct)}/70 · napsáno ${specRuns(MA1_SPEC, 'N').length}×` : 'pokaždé jiné zadání'))),
+    h('p', {}, 'Generuj do nekonečna: každá písemka je jiná, ale vždy má přesně ty typy příkladů, které chodí na zkoušku. Když si ji stáhneš jako PDF, za zadáním najdeš řešení s celými postupy.'),
+    h('div', { class: 'zk-gen-btns' },
+      h('button', { class: 'btn btn-primary', onclick: () => go('#/pisemka/N') }, 'Psát v appce'),
+      h('button', { class: 'btn btn-ghost', onclick: () => go('#/pisemka/tisk/N'), html: PDF_ICON + '<span>PDF k vytištění</span>' }))));
+
+  // ---- kde ztrácíš body
+  main.append(h('h2', { class: 'section-title zk-h2' }, 'Kde ztrácíš body'),
+    h('p', { class: 'muted small zk-sub' }, known.length ? 'Z posledních písemek a tréninků. Ťukni na příklad a natrénuj ho.' : 'Tady se ukáže, jak ti jdou jednotlivé příklady. Ťukni na kterýkoli a natrénuj ho.'),
+    h('div', { class: 'zk-skills' }, MA1_PARTS.map(([n, t]) => {
+      const v = pisMastery(n);
+      const lvl = v == null ? 'none' : v >= 80 ? 'good' : v >= 50 ? 'mid' : 'low';
+      return h('button', { class: `zk-skill zk-${lvl}`, type: 'button', onclick: () => go('#/pisemka/trenink/' + n) },
+        h('span', { class: 'zk-num' }, n),
+        h('span', { class: 'zk-skill-main' }, h('span', { class: 'zk-skill-t' }, t),
+          h('span', { class: 'zk-bar' }, h('i', { style: `width:${v ?? 0}%` }))),
+        h('span', { class: 'zk-skill-v' }, v == null ? 'trénovat' : `${v} %`),
+        h('span', { class: 'zk-chev', html: CHEV }));
+    })),
+    h('button', { class: 'zk-theory', type: 'button', onclick: () => go('#/pisemka/trenink/teorie') },
+      h('span', { class: 'zk-theory-n' }, String(BANK.length)),
+      h('span', {}, h('b', {}, 'Všechna tvrzení z příkladu 7'), h('small', {}, 'Teorie, která se na zkoušce opakuje. Každé tvrzení s vysvětlením a protipříkladem.')),
+      h('span', { class: 'zk-chev', html: CHEV })));
+
+  // ---- písemky z minulých let
+  main.append(h('h2', { class: 'section-title zk-h2' }, 'Písemky z minulých let'),
+    h('p', { class: 'muted small zk-sub' }, `${EXAMS.length} skutečných zadání. Ťukni na variantu: napsat v appce, nebo PDF s řešením.`));
   for (const g of GROUPS) {
     const exs = EXAMS.filter(e => e.group === g.id);
-    main.append(h('div', { class: 'pis-group' }, h('b', {}, g.title), h('span', { class: 'muted small' }, ' · ' + g.sub)));
-    main.append(h('div', { class: 'pis-list' }, exs.map(e => {
-      const best = bestRun(specRuns(MA1_SPEC, e.id));
-      const p1 = e.practical ? '\\lim \\dots,\\ \\int_0^{\\pi/2} \\dots' : examProblems(e)[0].tex;
-      return h('div', { class: 'pis-row' },
-        h('span', { class: 'path-num' }, e.letter || 'P'),
-        h('span', { class: 'pis-info' }, h('b', {}, e.practical ? 'Praktická část' : `Varianta ${e.letter}`), h('span', { class: 'pis-p1', html: m(`$${p1}$`) })),
-        best ? h('span', { class: 'variant-best' }, h('b', {}, `${fmtPts(best.correct)}/${best.total}`), h('small', {}, 'nejlépe')) : null,
-        h('span', { class: 'pis-btns' },
-          h('button', { class: 'btn btn-primary btn-small', onclick: () => go('#/pisemka/' + e.id) }, 'Psát'),
-          h('button', { class: 'btn btn-ghost btn-small', onclick: () => go('#/pisemka/tisk/' + e.id), 'aria-label': 'PDF k vytištění' }, 'PDF')));
-    })));
+    const doneN = exs.filter(e => specRuns(MA1_SPEC, e.id).length).length;
+    main.append(h('section', { class: 'zk-year' },
+      h('div', { class: 'zk-year-head' }, h('span', {}, h('b', {}, g.sub.replace(/ \(.*\)$/, '')), h('small', {}, g.title)), h('span', { class: 'zk-year-count' }, `${doneN}/${exs.length}`)),
+      h('div', { class: 'zk-tiles' }, exs.map(e => {
+        const best = bestRun(specRuns(MA1_SPEC, e.id));
+        const p = best ? pct(best.correct, best.total) : null;
+        return h('button', { class: 'zk-tile' + (best ? ' done' : ''), type: 'button', style: best ? `--p:${p}` : null, onclick: () => pisExamMenu(e, best) },
+          h('span', { class: 'zk-tile-l', html: e.practical ? 'P' : e.letter + (dupNo(e) ? `<sup>${dupNo(e)}</sup>` : '') }),
+          h('span', { class: 'zk-tile-s' }, best ? `${fmtPts(best.correct)}/${best.total}` : e.practical ? '5 příkladů' : 'nenapsáno'));
+      }))));
   }
-  const keys = ['N', ...EXAMS.map(e => e.id)];
-  const hist = keys.flatMap(k => specRuns(MA1_SPEC, k).map(r => ({ ...r, label: k === 'N' ? 'Nová písemka' : (examById(k)?.practical ? 'Praktická část' : `Varianta ${examById(k)?.letter} (${k})`) }))).sort((a, b) => b.d - a.d).slice(0, 8);
-  if (hist.length) main.append(h('h2', { class: 'section-title' }, 'Tvoje pokusy'), histList(hist));
-  app.replaceChildren(topbar('#/', 'Cvičná písemka'), main);
+
+  // ---- jak se boduje + historie
+  main.append(h('details', { class: 'zk-more' }, h('summary', {}, 'Jak se na zkoušce boduje'),
+    h('ul', {},
+      h('li', {}, '7 příkladů, každý nejvýš 10 bodů, celkem 70 bodů, čas 100 minut.'),
+      h('li', { html: m('Příklad 7 (pravda / nepravda): $+2$ za správnou odpověď, $-2$ za špatnou, bez odpovědi $0$. Celkem nejméně $0$ a nejvýš $10$ bodů. Nejistou odpověď je lepší vynechat.') }),
+      h('li', {}, 'Appka hodnotí výsledek. Na papíře se za správný postup dávají i dílčí body, takže skutečné body bývají vyšší.'),
+      h('li', {}, 'Během psaní tu není nápověda ani kontrola, jako na zkoušce. Postupy ke všem příkladům uvidíš po odevzdání.'))));
+  if (runs.length) {
+    main.append(h('details', { class: 'zk-more' }, h('summary', {}, `Tvoje pokusy (${runs.length})`),
+      histList(runs.sort((a, b) => b.d - a.d).slice(0, 12).map(r => ({ ...r, label: examLabel(r.k) })))));
+  }
+  app.replaceChildren(topbar('#/', ZK), main);
+}
+
+/** stejné písmeno vícekrát ve skupině (starší zadání: dvě A, dvě E) → pořadové číslo, jinak 0 */
+function dupNo(e) {
+  const same = EXAMS.filter(x => x.group === e.group && x.letter === e.letter);
+  return same.length > 1 ? same.indexOf(e) + 1 : 0;
+}
+/** volba u písemky z minulých let */
+function pisExamMenu(e, best) {
+  const g = GROUPS.find(x => x.id === e.group);
+  modal(e.practical ? 'Praktická část' : `Varianta ${e.letter}${dupNo(e) ? ` (${dupNo(e)}. zadání)` : ''}`,
+    `${g.title}, ${g.sub.toLowerCase()}.${best ? `<br>Nejlépe: <b>${fmtPts(best.correct)}/${best.total}</b> bodů.` : ''}`,
+    [{ label: 'Psát v appce', primary: true, fn: () => go('#/pisemka/' + e.id) },
+      { label: 'PDF s řešením', fn: () => go('#/pisemka/tisk/' + e.id) },
+      { label: 'Zavřít' }]);
 }
 
 function pisemkaTrain(n) {
@@ -1565,38 +1668,35 @@ function pisemkaTrain(n) {
     factories, title, back, mode: 'lesson', pathId: null, cheat: MA1_SPEC.cheat(),
     onFinish: ({ time, acc, exercises, mistakes }) => {
       const res = store.finishLesson('ma1-trenink-' + n, { acc, time });
-      endScreen({ title: 'Trénink hotový', sub: title, acc, time, exercises, mistakes, res, back, backLabel: 'Zpět na písemky', again: '#/pisemka/trenink/' + n, againLabel: 'Další kolo', againFirst: true });
+      if (TRAIN[n]) pisRecord(n, acc);
+      const v = TRAIN[n] ? pisMastery(n) : null;
+      endScreen({ title: 'Trénink hotový', sub: title, acc, time, exercises, mistakes, res, back, backLabel: 'Zpět na zkoušku', again: '#/pisemka/trenink/' + n, againLabel: 'Další kolo', againFirst: true,
+        extra: v != null ? h('p', { class: 'zk-after' }, `Připravenost na příklad ${n}: `, h('b', {}, `${v} %`)) : null });
     },
   });
 }
 
-/** zadání (a řešení) k tisku / do PDF */
+/** zadání + řešení s postupy k tisku / do PDF */
 function pisemkaPrint(v) {
   ensureCourse('ma1');
   if (v === 'N') { location.replace('#/pisemka/tisk/N' + examSeed()); return; }
   const ex = ma1Exam(v);
   if (!ex) return go('#/pisemka');
-  let mode = 'zadani';
   const sheets = h('div', { class: 'pz-sheets' });
-  const draw = () => {
-    sheets.replaceChildren(examSheet(ex, ex.problems), ...(mode === 'zadani' ? [] : [solutionSheet(ex, ex.problems, mode === 'postupy')]));
-    requestAnimationFrame(fit);
-  };
-  // náhled na obrazovce: list A4 zmenšený na šířku stránky (při tisku vždy 100 %)
-  const fit = () => {
+  const fit = () => {   // náhled: list A4 zmenšený na šířku stránky (při tisku vždy 100 %)
     const w = sheets.clientWidth;
     sheets.querySelectorAll('.pz-sheet').forEach(s => { s.style.zoom = ''; s.style.zoom = String(Math.min(1, w / s.offsetWidth)); });
   };
-  const seg = (id, label) => h('button', { class: 'seg' + (mode === id ? ' selected' : ''), type: 'button', onclick: e => { mode = id; e.currentTarget.parentElement.querySelectorAll('.seg').forEach(b => b.classList.toggle('selected', b === e.currentTarget)); draw(); } }, label);
-  const bar = h('div', { class: 'pz-tools' },
-    h('div', { class: 'seg-group' }, seg('zadani', 'Jen zadání'), seg('vysledky', '+ výsledky'), seg('postupy', '+ postupy')),
-    h('button', { class: 'btn btn-primary', onclick: () => window.print(), html: ICONS.download + '<span>Vytisknout / uložit PDF</span>' }),
-    h('p', { class: 'muted small' }, 'V okně tisku zvol tiskárnu „Uložit jako PDF“ (na Androidu „Uložit do PDF“). Okraje: žádné nebo výchozí, měřítko 100 %.'),
-    ex.generated ? h('div', { class: 'row' },
-      h('button', { class: 'btn btn-ghost btn-small', onclick: () => go('#/pisemka/' + v) }, 'Napsat tuhle písemku v appce'),
-      h('button', { class: 'btn btn-ghost btn-small', onclick: () => go('#/pisemka/tisk/N') }, 'Jiná nová písemka')) : null);
+  const draw = () => { sheets.replaceChildren(examSheet(ex, ex.problems), solutionSheet(ex, ex.problems, true)); requestAnimationFrame(fit); };
+  const bar = h('section', { class: 'zk-print' },
+    h('b', {}, ex.generated ? 'Generovaná písemka' : ex.title),
+    h('p', { class: 'muted small' }, 'První strana je zadání jako na zkoušce, za ním řešení s celými postupy. V okně tisku zvol „Uložit jako PDF“ (na Androidu „Uložit do PDF“), měřítko 100 %.'),
+    h('div', { class: 'zk-gen-btns' },
+      h('button', { class: 'btn btn-primary', onclick: () => window.print(), html: PDF_ICON + '<span>Uložit PDF / vytisknout</span>' }),
+      ex.generated ? h('button', { class: 'btn btn-ghost', onclick: () => go('#/pisemka/tisk/N'), html: INF_ICON + '<span>Vygenerovat jinou</span>' }) : null,
+      h('button', { class: 'btn btn-ghost', onclick: () => go('#/pisemka/' + v) }, 'Napsat v appce')));
   const main = h('main', { class: 'page pz-screen' }, bar, sheets);
-  app.replaceChildren(topbar('#/pisemka', ex.title), main);
+  app.replaceChildren(topbar('#/pisemka', ex.generated ? `Generovaná písemka č. ${ex.seed}` : ex.title), main);
   document.documentElement.classList.add('pz-printing');
   window.addEventListener('resize', fit);
   cleanup = () => { window.removeEventListener('resize', fit); document.documentElement.classList.remove('pz-printing'); };
@@ -1612,11 +1712,11 @@ function pisemkaRoute(parts) {
   return examRun(MA1_SPEC, v);
 }
 function pisemkaCard() {
-  const all = ['N', ...EXAMS.map(e => e.id)].flatMap(k => specRuns(MA1_SPEC, k));
-  const best = bestRun(all.map(r => ({ ...r, correct: r.correct / r.total * 70 })));
+  const known = MA1_PARTS.map(([n]) => pisMastery(n)).filter(v => v != null);
+  const ready = known.length ? Math.round(known.reduce((s, v) => s + v, 0) / known.length) : null;
   return h('button', { class: 'coll-card test-card', onclick: () => go('#/pisemka') },
     h('span', { class: 'test-card-icon', html: ICONS.trophy }),
-    h('span', { class: 'path-text' }, h('b', {}, 'Cvičná písemka'), h('span', { class: 'muted' }, all.length ? `${all.length}× napsáno · nejlépe ${fmtPts(Math.round(best.correct))} ze 70` : `${EXAMS.length - 1} písemek z minulých let, nové na počkání, PDF`)),
+    h('span', { class: 'path-text' }, h('b', {}, ZK), h('span', { class: 'muted' }, ready != null ? `Připravenost ${ready} % · generované písemky i ${EXAMS.length} zadání z minulých let` : `Generované písemky do nekonečna i ${EXAMS.length} zadání z minulých let`)),
     h('span', { class: 'go' }, 'Otevřít'));
 }
 
